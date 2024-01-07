@@ -1,0 +1,60 @@
+services:
+  # frontend:
+  #   build: frontend
+  #   environment:
+  #     - REACT_APP_BACKEND_URL=http://localhost:5000
+  #   ports:
+  #     - '3000:3000'
+  #   networks:
+  #     - network
+  #   depends_on:
+  #     backend:
+  #       condition: service_started
+
+  bank_backend:
+    build: backend
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USERNAME}:${DATABASE_PASSWORD}@bank_db_container:5432/${DATABASE_NAME}
+    ports:
+      - '5000:5000'
+    networks:
+      - network
+    depends_on:
+      bank_db_container:
+        condition: service_healthy
+    healthcheck:
+      test: curl --fail http://localhost:5000/health || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    
+
+  bank_db_container:
+    image: postgres:16.0-alpine
+
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=bank_db
+    volumes:
+      - db:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    networks:
+      - network
+    healthcheck:
+      test: pg_isready -U postgres
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+volumes:
+  db:
+    driver: local
+
+networks:
+  network:
+    driver: bridge
+
