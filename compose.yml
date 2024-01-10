@@ -15,6 +15,7 @@ services:
     build: backend
     environment:
       - DATABASE_URL=postgresql://${DATABASE_USERNAME}:${DATABASE_PASSWORD}@bank_db_container:5432/${DATABASE_NAME}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
     ports:
       - '5000:5000'
     networks:

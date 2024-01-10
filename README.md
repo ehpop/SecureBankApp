@@ -4,7 +4,10 @@
 
 # To run with docker
 
+```shell
+docker compose build
 ```
-    docker compose build
-    docker compose up
+```shell docker compose up
+docker compose up
 ```
+
