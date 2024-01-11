@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Registration and Login Test</title>
+</head>
+<body>
+
+<h2>User Registration</h2>
+<form id="registerForm">
+    <label for="username">Username:</label>
+    <input type="text" id="username" name="username" required><br>
+
+    <label for="password">Password:</label>
+    <input type="password" id="password" name="password" required><br>
+
+    <label for="name">First Name:</label>
+    <input type="text" id="name" name="name" required><br>
+
+    <label for="lastname">Last Name:</label>
+    <input type="text" id="lastname" name="lastname" required><br>
+
+    <button type="button" onclick="registerUser()">Register</button>
+</form>
+
+<h2>User Login</h2>
+<form id="loginForm">
+    <label for="loginUsername">Username:</label>
+    <input type="text" id="loginUsername" name="username" required><br>
+
+    <label for="loginPassword">Password:</label>
+    <input type="password" id="loginPassword" name="password" required><br>
+
+    <button type="button" onclick="loginUser()">Login</button>
+</form>
+
+<h2>User Logout</h2>
+<form id="logoutForm">
+    <button type="button" onclick="logoutUser()">Logout</button>
+</form>
+
+
+<script>
+    async function registerUser() {
+        const registerForm = document.getElementById('registerForm');
+        const formData = new FormData(registerForm);
+
+        try {
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(Object.fromEntries(formData)),
+            });
+
+            const data = await response.json();
+            console.log(data);
+            alert(data.message);
+        } catch (error) {
+            console.error('Error during registration:', error);
+        }
+    }
+
+    async function loginUser() {
+        const loginForm = document.getElementById('loginForm');
+        const formData = new FormData(loginForm);
+
+        try {
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(Object.fromEntries(formData)),
+            });
+
+            const data = await response.json();
+            console.log(data);
+            alert(data.message);
+        } catch (error) {
+            console.error('Error during login:', error);
+        }
+    }
+
+    async function logoutUser() {
+        try {
+            const response = await fetch('/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            const data = await response.json();
+            console.log(data);
+            alert(data.message);
+        } catch (error) {
+            console.error('Error during logout:', error);
+        }
+    }
+</script>
+</body>
+</html>
