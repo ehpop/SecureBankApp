@@ -3,6 +3,7 @@ from flask import Flask, session, redirect, url_for, request, jsonify
 from config import Config
 from flask_sqlalchemy import SQLAlchemy
 from helpers.generate_numbers import generate_account_number, generate_card_number
+from helpers.password_checker import check_password_strength
 import bcrypt, secrets
 import time
 
@@ -42,12 +43,12 @@ class Users(db.Model):
 
     def to_json(self):
         return f"""{{
-            "name": {self.us_nme},
-            "login": {self.us_lgn},
-            "account_number": {self.us_act_nb},
-            "card_number": {self.us_crd_nb},
-            "balance": {self.us_blnc},
-            "salt_id": {self.salt_id}
+            "name": "{self.us_nme}",
+            "login": "{self.us_lgn}",
+            "account_number": "{self.us_act_nb}",
+            "card_number": "{self.us_crd_nb}",
+            "balance": "{self.us_blnc}",
+            "salt_id": "{self.salt_id}"
         }}"""
 
     @staticmethod
@@ -122,9 +123,9 @@ class UserCredentials(db.Model):
 
     def to_json(self):
         return f"""{{
-            "user_id": {self.usr_id},
-            "password": {self.pswd_ltrs_nmbrs},
-            "hash_value": {self.hsh_val}
+            "user_id": "{self.usr_id}",
+            "password": "{self.pswd_ltrs_nmbrs}",
+            "hash_value": "{self.hsh_val}"
         }}"""
 
     def save_user_credentials(self):
@@ -219,6 +220,11 @@ def register_user():
         app.logger.info(Users.get_user_by_login(username))
         time.sleep(REGISTER_TIMEOUT)
         return jsonify({"error": "Username already taken"}), 409
+
+    password_strength_errors = check_password_strength(password)
+    if password_strength_errors:
+        time.sleep(REGISTER_TIMEOUT)
+        return password_strength_errors, 400
 
     salt = bcrypt.gensalt()
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt).hex()
