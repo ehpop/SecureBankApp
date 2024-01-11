@@ -7,6 +7,7 @@ MIN_SPECIAL_CHARACTERS = 1
 MIN_NON_LETTERS = 2
 MIN_ENTROPY_BITS = 32
 
+#TODO: Add max length 16
 policy = PasswordPolicy.from_names(
     length=MIN_PASSWORD_LENGTH,
     uppercase=MIN_UPPERCASE_LETTERS,
@@ -36,7 +37,7 @@ def map_errors_to_messages(errors: list) -> list:
         elif error_name == "NONLETTERS":
             messages.append("Password must contain at least 2 non-letter characters.")
         elif error_name == "ENTROPYBITS":
-            messages.append("Password must contain at least 32 bits of entropy.")
+            messages.append("Password must contain at least 32 bits of entropy. (Make it a bit longer, or more random ;])")
 
     return messages
 
