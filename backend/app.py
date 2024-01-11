@@ -2,10 +2,12 @@ import flask
 from flask import Flask, session, redirect, url_for, request, jsonify
 from config import Config
 from flask_sqlalchemy import SQLAlchemy
-from helpers.generate_numbers import generate_account_number, generate_card_number
+from helpers.generate_numbers import generate_account_number, generate_card_number, generate_random_consecutive_numbers
 from helpers.password_checker import check_password_strength
 import bcrypt, secrets
 import time
+
+AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD = 7
 
 REGISTER_TIMEOUT = 5
 LOGIN_TIMEOUT = 5
@@ -136,6 +138,16 @@ class UserCredentials(db.Model):
     def get_user_credentials_by_id(user_id: str):
         return UserCredentials.query.where(UserCredentials.usr_id == user_id).first()
 
+    @staticmethod
+    def get_random_credentials_for_user(user_id: str):
+        all_user_credentials = UserCredentials.query.where(UserCredentials.usr_id == user_id).all()
+        random_credentials = secrets.choice(all_user_credentials)
+        return random_credentials
+
+    @staticmethod
+    def parse_list_of_numbers_from_string(string: str) -> list[int]:
+        return [int(number) for number in string.lstrip("{").rstrip("}").split(",")]
+
 
 class Salts(db.Model):
     slt_id = db.Column(db.Integer, primary_key=True)
@@ -195,9 +207,20 @@ def health():
 def session_info():
     return f"<h1>{session}</h1>"
 
+
 @app.route("/test")
 def test():
     return flask.render_template("test.html")
+
+
+@app.route("/test_credentials")
+def test_credentials():
+    if "user_id" not in session or "authenticated" not in session or not session["authenticated"]:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    creds = UserCredentials.get_random_credentials_for_user(session["user_id"])
+    return f'<h1>{creds}</h1><br><h1>{UserCredentials.parse_list_of_numbers_from_string(creds.pswd_ltrs_nmbrs)}</h1>'
+
 
 @app.route("/my_account_number")
 def my_account_number():
@@ -230,6 +253,7 @@ def register_user():
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt).hex()
 
     new_salt = Salts(slt_vl=salt.hex())
+    # TODO: if we do this, rollback is not possible, needs to be fixed
     new_salt.save_salt()
 
     app.logger.info(new_salt.to_json())
@@ -238,17 +262,31 @@ def register_user():
                      us_act_nb=Users.generate_new_account_number(), us_crd_nb=Users.generate_new_card_number(),
                      us_blnc=0, salt_id=new_salt.slt_id)
 
+    # TODO: if we do this, rollback is not possible, needs to be fixed
     new_user.save_user()
 
-    app.logger.info(new_user.to_json())
-    time.sleep(REGISTER_TIMEOUT)
+    for _ in range(10):
+        combination_of_password_letters = generate_random_consecutive_numbers(len(password),
+                                                                              AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD)
+        letters_in_password = "".join([password[i - 1] for i in combination_of_password_letters])
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(letters_in_password.encode("utf-8"), salt).hex()
 
+        new_salt = Salts(slt_vl=salt.hex())
+        new_salt.save_salt()
+
+        user_credentials = UserCredentials(usr_id=username, pswd_ltrs_nmbrs=combination_of_password_letters,
+                                           hsh_val=hashed_password, slt_id=new_salt.slt_id)
+        user_credentials.save_user_credentials()
+
+    time.sleep(REGISTER_TIMEOUT)
     return new_user.to_json(), 201
 
 
 @app.route("/logout_success", methods=["GET"])
 def logout_success():
     return f"<h1>Logout successful</h1>"
+
 
 @app.route("/logout", methods=["POST"])
 def logout_user():
