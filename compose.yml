@@ -16,6 +16,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://${DATABASE_USERNAME}:${DATABASE_PASSWORD}@bank_db_container:5432/${DATABASE_NAME}
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - UPLOAD_PATH=${UPLOAD_PATH}
     ports:
       - '5000:5000'
     networks:
@@ -23,12 +24,14 @@ services:
     depends_on:
       bank_db_container:
         condition: service_healthy
+    volumes:
+      - backend:/srv/${UPLOAD_PATH}
     healthcheck:
       test: curl --fail http://localhost:5000/health || exit 1
       interval: 5s
       timeout: 5s
       retries: 5
-    
+
 
   bank_db_container:
     image: postgres:16.0-alpine
@@ -54,6 +57,9 @@ services:
 volumes:
   db:
     driver: local
+  backend:
+    driver: local
+
 
 networks:
   network:
