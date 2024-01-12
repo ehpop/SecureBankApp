@@ -1,3 +1,6 @@
+import io
+import os
+
 import flask
 from flask import Flask, session, redirect, url_for, request, jsonify
 from config import Config
@@ -5,7 +8,14 @@ from flask_sqlalchemy import SQLAlchemy
 from helpers.generate_numbers import generate_account_number, generate_card_number, generate_random_consecutive_numbers
 from helpers.password_checker import check_password_strength
 from datetime import datetime, timedelta
+from helpers.auth_wrapper import requires_authentication
+from helpers.file_content_checker import check_file_content_based_on_extension, get_file_extension
+from helpers.file_encrypter import encrypt_file_content_with_key, decrypt_file_content_with_key
+from werkzeug.utils import secure_filename
+import pyAesCrypt
 import bcrypt, secrets, time
+
+MAX_FAILED_LOGIN_ATTEMPTS = 3
 
 AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD = 6
 
@@ -241,6 +251,56 @@ class Transactions(db.Model):
         db.session.add(self)
         db.session.commit()
 
+    @staticmethod
+    def get_all_transactions():
+        return Transactions.query.where(1 == 1).all()
+
+    @staticmethod
+    def get_transactions_by_account_number(account_number: str):
+        app.logger.info(account_number)
+
+        app.logger.info(Transactions.query.where(
+            Transactions.act_frm == account_number or Transactions.act_to == account_number).all()
+                        )
+
+        return Transactions.query.where(
+            Transactions.act_frm == account_number or Transactions.act_to == account_number).all()
+
+    @staticmethod
+    def get_transactions_by_account_number_and_date(account_number: str, date: str):
+        return Transactions.query.where(
+            Transactions.act_frm == account_number or Transactions.act_to == account_number).where(
+            Transactions.trns_dt == date).all()
+
+    @staticmethod
+    def get_transactions_made_by_user(user_login: str) -> list:
+        user = Users.query.where(Users.us_lgn == user_login).first()
+        app.logger.info(f"User for whom transactions are being fetched: {user} ")
+
+        if user is None:
+            return []
+
+        return Transactions.get_transactions_by_account_number(user.us_act_nb)
+
+    @staticmethod
+    def get_transactions_incoming_to_user(user_login: str) -> list:
+        user = Users.query.where(Users.us_lgn == user_login).first()
+
+        if user is None:
+            return []
+
+        return Transactions.query.where(Transactions.act_to == user.us_act_nb).all()
+
+    @staticmethod
+    def get_transactions_outgoing_from_user(user_login: str) -> list:
+        user = Users.query.where(Users.us_lgn == user_login).first()
+        app.logger.info(f"User for whom transactions are being fetched: {user} ")
+
+        if user is None:
+            return []
+
+        return Transactions.query.where(Transactions.act_frm == user.us_act_nb).all()
+
 
 class Documents(db.Model):
     dcm_id = db.Column(db.Integer, primary_key=True)
@@ -293,19 +353,58 @@ class LoginAttempts(db.Model):
         :param period_of_time: period of time in minutes, default is 10
         :return: amount of failed login attempts in a given period of time
         """
-        app.logger.info(
-            [(log_att.timestamp - timedelta(minutes=period_of_time)) for log_att in LoginAttempts.query.where(
-                LoginAttempts.username == username \
-                and LoginAttempts.ip_address == ip_address \
-                and LoginAttempts.timestamp > datetime.utcnow() - timedelta(minutes=period_of_time)
-            ).all()]
-        )
 
-        return LoginAttempts.query.where(
-            LoginAttempts.username == username \
-            and LoginAttempts.ip_address == ip_address \
-            and LoginAttempts.timestamp > datetime.utcnow() - timedelta(minutes=period_of_time)
-        ).count()
+        failed_login_attempts = (LoginAttempts.query
+        .where(LoginAttempts.username == username)
+        .where(LoginAttempts.ip_address == ip_address)
+        .where(LoginAttempts.success == False)
+        .where(
+            LoginAttempts.timestamp > datetime.utcnow() - timedelta(minutes=period_of_time)))
+
+        return failed_login_attempts.count()
+
+    @staticmethod
+    def get_all_ip_addresses_for_user(username: str) -> list[dict]:
+        """
+        Gets all IP addresses that were used to log in to a given account.
+        :param username: username of the user
+        :return: list of IP addresses
+        """
+        return [{"ip_address": login_attempt.ip_address, "timestamp": login_attempt.timestamp} for login_attempt in
+                LoginAttempts.query.where(LoginAttempts.username == username).all()]
+
+    @staticmethod
+    def get_all_login_attempts_for_user(username: str) -> list[dict]:
+        """
+        Gets all login attempts for a given user.
+        :param username: username of the user
+        :return: list of login attempts
+        """
+        return [{"ip_address": login_attempt.ip_address, "timestamp": login_attempt.timestamp,
+                 "success": login_attempt.success} for login_attempt in
+                LoginAttempts.query.where(LoginAttempts.username == username).all()]
+
+    @staticmethod
+    def get_all_failed_login_attempts_for_user(username: str) -> list[dict]:
+        """
+        Gets all failed login attempts for a given user.
+        :param username: username of the user
+        :return: list of failed login attempts
+        """
+        return [{"ip_address": login_attempt.ip_address, "timestamp": login_attempt.timestamp,
+                 "success": login_attempt.success} for login_attempt in
+                LoginAttempts.get_all_login_attempts_for_user(username) if not login_attempt["success"]]
+
+    @staticmethod
+    def get_all_successful_login_attempts_for_user(username: str) -> list[dict]:
+        """
+        Gets all successful login attempts for a given user.
+        :param username: username of the user
+        :return: list of successful login attempts
+        """
+        return [{"ip_address": login_attempt.ip_address, "timestamp": login_attempt.timestamp,
+                 "success": login_attempt.success} for login_attempt in
+                LoginAttempts.get_all_login_attempts_for_user(username) if login_attempt["success"]]
 
 
 @app.route("/health")
@@ -318,28 +417,9 @@ def session_info():
     return f"<h1>{session}</h1>"
 
 
-@app.route("/test")
+@app.route("/test", methods=["GET", "POST"])
 def test():
     return flask.render_template("test.html")
-
-
-@app.route("/test_credentials")
-def test_credentials():
-    if "user_id" not in session or "authenticated" not in session or not session["authenticated"]:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    creds = UserCredentials.get_random_credentials_for_user(session["user_id"])
-    return f'<h1>{creds}</h1><br><h1>{UserCredentials.parse_list_of_numbers_from_string(creds.pswd_ltrs_nmbrs)}</h1>'
-
-
-@app.route("/my_account_number")
-def my_account_number():
-    if "user_id" not in session or "authenticated" not in session or not session["authenticated"]:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    user = Users.get_user_by_login(session["user_id"])
-
-    return jsonify({"account_number": user.us_act_nb}), 200
 
 
 @app.route("/register", methods=["POST"])
@@ -398,6 +478,10 @@ def register_user():
     return redirect(url_for('register_success', _method="GET"))
 
 
+@app.route("/", methods=["GET"])
+def index():
+    return flask.render_template("index.html")
+
 @app.route("/logout_success", methods=["GET"])
 def logout_success():
     return f"<h1>Logout successful</h1>"
@@ -410,6 +494,7 @@ def register_success():
 
 @app.route("/logout", methods=["POST"])
 def logout_user():
+    session.pop("username", None)
     session.pop("user_id", None)
     session.pop("authenticated", None)
     return redirect(url_for("logout_success", _method="GET"))
@@ -433,11 +518,12 @@ def login_user():
         password = request.json["password"]
         combination_id = request.json["combination_id"]
     except KeyError:
-        return jsonify({"error": "Missing data"}), 409
+        return jsonify({"error": "Missing data"}), 400
 
     login_attempt = LoginAttempts(username=username, ip_address=request.remote_addr)
 
-    if LoginAttempts.calculate_failed_login_attempts_in_period(username, request.remote_addr) >= 3:
+    if LoginAttempts.calculate_failed_login_attempts_in_period(username,
+                                                               request.remote_addr) >= MAX_FAILED_LOGIN_ATTEMPTS:
         return jsonify({"error": "Too many login attempts"}), 429
 
     if not UserCredentials.check_password_combination_for_id(combination_id, password):
@@ -451,14 +537,16 @@ def login_user():
     login_attempt.success = True
     login_attempt.save_login_attempt()
 
-    return jsonify({"message": "Successfully logged in"}), 200
+    return redirect(url_for("login_success", _method="GET")), 302
+
+@app.route("/login/success", methods=["GET"])
+def login_success():
+    return f"<h1>Login successful</h1>"
 
 
 @app.route("/transfer_money", methods=["POST"])
+@requires_authentication
 def transfer_money():
-    if "user_id" not in session or "authenticated" not in session or not session["authenticated"]:
-        return jsonify({"error": "Unauthorized"}), 401
-
     user = Users.get_user_by_login(session["user_id"])
     amount = request.json["amount"]
     recipient_account_number = request.json["recipient_account_number"]
@@ -480,6 +568,178 @@ def transfer_money():
 
     return jsonify({"message": "Transfer successful"}), 200
 
+
+@app.route("/get_transactions", methods=["GET"])
+@requires_authentication
+def get_transactions():
+    user = Users.get_user_by_login(session["user_id"])
+    transactions = Transactions.get_transactions_by_account_number(user.us_act_nb)
+
+    return jsonify([transaction.to_dict() for transaction in transactions]), 200
+
+
+@app.route("/get_transactions_out", methods=["GET"])
+@requires_authentication
+def get_transactions_outgoing():
+    user = Users.get_user_by_login(session["user_id"])
+    transactions = Transactions.get_transactions_outgoing_from_user(user.us_lgn)
+
+    return jsonify([transaction.to_dict() for transaction in transactions]), 200
+
+
+@app.route("/get_transactions_in", methods=["GET"])
+@requires_authentication
+def get_transactions_incoming():
+    user = Users.get_user_by_login(session["user_id"])
+    transactions = Transactions.get_transactions_incoming_to_user(user.us_lgn)
+
+    return jsonify([transaction.to_dict() for transaction in transactions]), 200
+
+
+@app.route("/get_all_login_attemps")
+@requires_authentication
+def get_all_login_attempts():
+    user = Users.get_user_by_login(session["user_id"])
+    login_attempts = LoginAttempts.get_all_login_attempts_for_user(user.us_lgn)
+
+    return jsonify(login_attempts), 200
+
+
+@app.route('/send_document', methods=['GET'])
+@requires_authentication
+def post_form():
+    return flask.render_template('post_form.html')
+
+
+@app.route('/send_document', methods=['POST'])
+@requires_authentication
+def send_document():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+
+    try:
+        password = request.form['password']
+        uploaded_file = request.files['file']
+        user_id = session['user_id']
+    except KeyError:
+        return jsonify({"error": "Missing data"}), 400
+
+    if uploaded_file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    uploaded_file_content = uploaded_file.stream.read()
+    uploaded_file_name = secure_filename(uploaded_file.filename)
+
+    if not password or not user_id:
+        return jsonify({"error": "Unauthorized request"}), 401
+
+    passw = password.encode("utf-8")
+    hashed_password = bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)
+
+    if not bcrypt.checkpw(passw, hashed_password):
+        return jsonify({"error": "Wrong credentials"}), 401
+
+    file_extension = get_file_extension(uploaded_file_name)
+
+    if not file_extension in app.config['UPLOAD_EXTENSIONS']:
+        return jsonify({"error": "Invalid file extension"}), 400
+
+    if not check_file_content_based_on_extension(uploaded_file.stream, file_extension):
+        return jsonify({"error": "Invalid file content"}), 400
+
+    user_custom_path = os.path.join(app.config['UPLOAD_PATH'], user_id)
+    if not os.path.exists(user_custom_path):
+        os.makedirs(user_custom_path)
+
+    salt = bytes.fromhex(Salts.get_salt_by_id(Users.get_user_by_login(user_id).salt_id).slt_vl)
+    file_encrypted = encrypt_file_content_with_key(uploaded_file_content, password, salt)
+
+    with open(os.path.join(user_custom_path, uploaded_file_name + '.aes'), "wb") as f:
+        f.write(file_encrypted)
+
+    return jsonify({"message": "File uploaded successfully"}), 200
+
+
+@app.route('/get_document', methods=['GET'])
+@requires_authentication
+def get_form():
+    return flask.render_template('get_form.html')
+
+
+@app.route('/get_document', methods=['POST'])
+@requires_authentication
+def get_document():
+    try:
+        password = request.form['password']
+        filename = request.form['filename']
+    except KeyError:
+        return jsonify({"error": "Missing data"}), 400
+
+    user_id = session['user_id']
+    is_authenticated = session['authenticated']
+
+    if not is_authenticated or not user_id:
+        return jsonify({"error": "Unauthorized request"}), 401
+
+    passw = password.encode("utf-8")
+    hashed_password = bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)
+
+    if not bcrypt.checkpw(passw, hashed_password):
+        return jsonify({"error": "Wrong credentials"}), 401
+
+    user_custom_path = os.path.join(app.config['UPLOAD_PATH'], user_id)
+
+    try:
+        with open(os.path.join(user_custom_path, filename + '.aes'), "rb") as f:
+            content = f.read()
+    except FileNotFoundError:
+        return jsonify({"error": "File not found"}), 400
+
+    if not content:
+        return jsonify({"error": "No file found"}), 400
+
+    salt = bytes.fromhex(Salts.get_salt_by_id(Users.get_user_by_login(user_id).salt_id).slt_vl)
+    decrypted_data = decrypt_file_content_with_key(content, password, salt)
+
+    return flask.send_file(io.BytesIO(decrypted_data), as_attachment=True, download_name=filename)
+
+
+@app.route('/get_document_without_encryption', methods=['GET'])
+def get_document_without_encryption():
+    filename = "swiadectwo.png"
+    return flask.send_file(filename, as_attachment=True, download_name=filename)
+
+
+@app.route('/get_all_document_names', methods=['POST'])
+def get_all_document_names():
+    try:
+        password = request.form['password']
+    except KeyError:
+        return jsonify({"error": "Missing data"}), 400
+
+    user_id = session['user_id']
+    is_authenticated = session['authenticated']
+
+    if not is_authenticated or not user_id:
+        return jsonify({"error": "Unauthorized request"}), 401
+
+    passw = password.encode("utf-8")
+    hashed_password = bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)
+
+    if not bcrypt.checkpw(passw, hashed_password):
+        return jsonify({"error": "Wrong credentials"}), 401
+
+    user_custom_path = os.path.join(app.config['UPLOAD_PATH'], user_id)
+
+    try:
+        filenames = [filename[:-4] for filename in os.listdir(user_custom_path) if filename.endswith(".aes")]
+    except FileNotFoundError:
+        return jsonify({"error": "File not found"}), 400
+
+    if not filenames:
+        return jsonify({"error": "No files found"}), 400
+
+    return jsonify(filenames), 200
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0")
