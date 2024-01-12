@@ -10,8 +10,8 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=30)
 
     # File upload config
-    UPLOAD_PATH = os.environ.get("UPLOAD_FOLDER")
-    UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.pdf']
+    UPLOAD_PATH = os.environ.get("UPLOAD_PATH")
+    UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf']
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024 # 16MB
 
 
