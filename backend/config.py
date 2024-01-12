@@ -14,4 +14,12 @@ class Config:
     UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf']
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024 # 16MB
 
+    # Login and register config
+    MAX_FAILED_LOGIN_ATTEMPTS = 3
+    AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD = 6
+    LOGIN_TIMEOUT = 2
+
+    AMOUNT_OF_COMBINATIONS_GENERATED_FOR_PASSWORD = 10
+    REGISTER_TIMEOUT = 2
+
 
