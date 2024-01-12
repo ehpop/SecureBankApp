@@ -1,0 +1,10 @@
+Crypto
+Pillow
+bcrypt
+flask
+flask_sqlalchemy
+password-strength
+psycopg2-binary
+pyAesCrypt
+pycryptodome
+pypdf
