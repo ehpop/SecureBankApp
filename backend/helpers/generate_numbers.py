@@ -1,3 +1,4 @@
+import datetime
 import random
 
 
@@ -15,24 +16,50 @@ def generate_account_number() -> str:
     return pl_iban
 
 
-def generate_card_number() -> str:
+def generate_card_data() -> ((str, str, str), (str, str, str)):
+    """
+    Generates card data for a user.
+    :return: Tuple of card data and hidden card data
+    """
+
+    card_number, hidden_card_number = _generate_card_number()
+    cvc, hidden_cvc = _generate_random_cvc()
+    expiry_date, hidden_expiry_date = _generate_expiry_date()
+
+    return (card_number, cvc, expiry_date), (hidden_card_number, hidden_cvc, hidden_expiry_date)
+
+
+def _generate_card_number() -> (str, str):
     """
     Generates a random VISA card number.
     VISA card format: 4XXXXXXXXXXXXXXX (16 digits)
 
-    :returns: generated card number unique to the database
+    :returns: generated card number unique to the database, hidden card number
     """
 
     visa_prefix = '4'
     card_number = visa_prefix + ''.join(str(random.randint(0, 9)) for _ in range(15))
 
-    checksum = generate_luhn_checksum(card_number)
+    checksum = _generate_luhn_checksum(card_number)
     card_number += str(checksum)
 
-    return card_number
+    hidden_card_number = _hide_card_number(card_number)
+
+    return card_number, hidden_card_number
 
 
-def generate_luhn_checksum(card_number: str) -> int:
+def _hide_card_number(card_number: str) -> str:
+    """
+    Hides the middle part of a card number with asterisks.
+
+    :param card_number: Card number to hide.
+    :returns: Card number with the middle part hidden.
+    """
+
+    return card_number[:4] + '*' * 8 + card_number[-4:]
+
+
+def _generate_luhn_checksum(card_number: str) -> int:
     """
     Generates a checksum for a card number using the Luhn algorithm.
 
@@ -46,6 +73,42 @@ def generate_luhn_checksum(card_number: str) -> int:
 
     total = sum(odd_digits + even_digits) % 10
     return (10 - total) % 10
+
+
+def _generate_random_cvc() -> (str, str):
+    """
+    Generates a random CVC code.
+    CVC code format: XXX (3 digits)
+
+    :returns: generated CVC code
+    """
+
+    random_cvc = ''.join(str(random.randint(0, 9)) for _ in range(3))
+    hidden_cvc = '*' * 3
+
+    return random_cvc, hidden_cvc
+
+
+def _generate_expiry_date() -> (str, str):
+    """
+    Generates expiry date for a card.
+    :return: Expiry date in format MM/YY, hidden expiry date in format **/**
+    """
+
+    CARD_EXPIRY_YEARS = 3
+    CURRENT_MILLENIUM = 2000
+
+    month = datetime.datetime.now().month
+    year = datetime.datetime.now().year - CURRENT_MILLENIUM + CARD_EXPIRY_YEARS
+
+    padded_month = f'0{month}' if month < 10 else f'{month}'
+    padded_year = f'0{year}' if year < 10 else f'{year}'
+
+    expiry_date = f'{padded_month}/{padded_year}'
+    hidden_expiry_date = '**/**'
+
+    return expiry_date, hidden_expiry_date
+
 
 def generate_random_consecutive_numbers(max_length, amount_of_nums_to_generate) -> list[int]:
     """
@@ -65,4 +128,3 @@ def generate_random_consecutive_numbers(max_length, amount_of_nums_to_generate) 
         numbers.add(number)
 
     return sorted(list(numbers))
-
