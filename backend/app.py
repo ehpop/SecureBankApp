@@ -22,6 +22,7 @@ app.config.from_object(Config)
 app.app_context().push()
 
 db.init_app(app)
+logger = app.logger
 
 from models import Users, Salts, UserCredentials, Transactions, LoginAttempts, CreditCards
 
@@ -91,7 +92,7 @@ def register_user():
         us_nme=f"{name} {lastname}",
         us_hsh=hashed_password,
         us_act_nb=Users.generate_new_account_number(),
-        us_crd_nb=credit_card.crd_id,
+        us_crd_nb_id=credit_card.crd_id,
         us_blnc=0,
         salt_id=new_salt.slt_id)
 
@@ -149,6 +150,10 @@ def logout_user():
 @app.route("/get_password_combination/<user_id>")
 def get_password_combination(user_id: str):
     credentials = UserCredentials.get_random_credentials_for_user(user_id)
+
+    if credentials is None:
+        return jsonify({"error": "No credentials found"}), 404
+
     return jsonify({
         "combination_id": credentials.cmb_id,
         "letters_combination": credentials.pswd_ltrs_nmbrs
@@ -166,15 +171,19 @@ def login_user():
     except KeyError:
         return jsonify({"error": "Missing data"}), 400
 
-    login_attempt = LoginAttempts(username=username, ip_address=request.remote_addr)
+    user = Users.get_user_by_login(username)
+    if user is None:
+        return jsonify({"error": "Wrong credentials"}), 401
+
+    login_attempt = LoginAttempts(username=username, ip_address=request.remote_addr, success=False)
 
     if LoginAttempts.calculate_failed_login_attempts_in_period(username,
                                                                request.remote_addr) >= app.config[
         'MAX_FAILED_LOGIN_ATTEMPTS']:
+        login_attempt.save_login_attempt()
         return jsonify({"error": "Too many login attempts"}), 429
 
     if not UserCredentials.check_password_combination_for_id(combination_id, password):
-        login_attempt.success = False
         login_attempt.save_login_attempt()
         return jsonify({"error": "Wrong credentials"}), 401
 

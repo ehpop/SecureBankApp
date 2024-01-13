@@ -95,11 +95,12 @@ class Users(db.Model):
 
 
 class UserCredentials(db.Model):
+    AMOUNT_OF_ACTIVE_TIME = 10
+
     cmb_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     usr_id = db.Column(db.String, nullable=False)
     pswd_ltrs_nmbrs = db.Column(db.String, nullable=False)
     hsh_val = db.Column(db.String, nullable=False)
-    is_active = db.Column(db.Boolean, default=False, nullable=False)
     lst_activated_date = db.Column(db.DateTime, default=None, nullable=True)
     slt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
 
@@ -136,19 +137,85 @@ class UserCredentials(db.Model):
         return UserCredentials.query.where(UserCredentials.cmb_id == combination_id).first()
 
     @staticmethod
-    def check_password_combination_for_id(combination_id: str, password: str):
+    def check_password_combination_for_id(combination_id: str, password: str) -> bool:
+        """
+        Checks if the password combination is correct for a given id. It also must be active, meaning
+        user must have asked server for this specific combination in the last
+        UserCredentials.AMOUNT_OF_ACTIVE_TIME minutes.
+
+        **IMPORTANT**: This method automatically removes last activated date from the password combination
+        so that it won't be used again immediately.
+
+        :param combination_id: ID of the password combination to check
+        :param password: Password to check
+        :return: True if the password combination is correct, and it was active at the time, False otherwise
+        """
         combination = UserCredentials.get_user_credentials_by_id(combination_id)
 
         if combination is None:
             return False
 
-        return bcrypt.checkpw(password.encode("utf-8"), bytes.fromhex(combination.hsh_val))
+        is_combination_active = UserCredentials.is_password_combination_active(combination_id)
+
+        if not is_combination_active:
+            return False
+
+        is_password_correct = bcrypt.checkpw(password.encode("utf-8"), bytes.fromhex(combination.hsh_val))
+
+        if not is_password_correct:
+            return False
+
+        combination.lst_activated_date = None
+        db.session.commit()
+        return True
 
     @staticmethod
     def get_random_credentials_for_user(user_id: str):
+        """
+        Gets random credentials for a given user. If there are no active credentials, it activates a random one,
+        by setting the lst_activated_date to the current date. If there are no credentials for a given user, it
+        returns None.
+
+        :param user_id: Login of the user for whom the credentials should be returned
+        :return: credentials object
+        """
+
         all_user_credentials = UserCredentials.query.where(UserCredentials.usr_id == user_id).all()
-        random_credentials = secrets.choice(all_user_credentials)
+        if all_user_credentials is None:
+            return None
+
+        active_credentials = [credential for credential in all_user_credentials if
+                              UserCredentials.is_password_combination_active(credential.cmb_id)]
+
+        if len(active_credentials) > 0:
+            return active_credentials[0]
+
+        try:
+            random_credentials = secrets.choice(all_user_credentials)
+            random_credentials.lst_activated_date = datetime.utcnow()
+            db.session.commit()
+        except IndexError:
+            return None
+
         return random_credentials
+
+    @staticmethod
+    def is_password_combination_active(combination_id: str) -> bool:
+        """
+        Checks if the password combination is active. Meaning that it was activated less than
+        UserCredentials.AMOUNT_OF_ACTIVE_TIME minutes ago.
+        :param combination_id: id of the password combination to check
+        :return: True if the password combination is active, False otherwise
+        """
+
+        combination = UserCredentials.get_user_credentials_by_id(combination_id)
+
+        if combination is None:
+            return False
+
+        return combination.lst_activated_date is not None \
+            and combination.lst_activated_date > datetime.utcnow() - timedelta(
+                minutes=UserCredentials.AMOUNT_OF_ACTIVE_TIME)
 
     @staticmethod
     def parse_list_of_numbers_from_string(string: str) -> list[int]:
@@ -320,14 +387,23 @@ class LoginAttempts(db.Model):
         :return: amount of failed login attempts in a given period of time
         """
 
-        failed_login_attempts = (LoginAttempts.query
-        .where(LoginAttempts.username == username)
-        .where(LoginAttempts.ip_address == ip_address)
-        .where(LoginAttempts.success == False)
-        .where(
-            LoginAttempts.timestamp > datetime.utcnow() - timedelta(minutes=period_of_time)))
+        all_login_attempts_for_user_and_ip = (LoginAttempts.query
+                                              .where(LoginAttempts.username == username)
+                                              .where(LoginAttempts.ip_address == ip_address)
+                                              .where(
+            LoginAttempts.timestamp > datetime.utcnow() - timedelta(minutes=period_of_time))
+                                              .order_by(LoginAttempts.timestamp.desc()))
 
-        return failed_login_attempts.count()
+        last_successful_login_attempt = [attempt for attempt in all_login_attempts_for_user_and_ip if attempt.success]
+        if len(last_successful_login_attempt) > 0:
+            failed_login_attempts_since_last_successful_login = [attempt for attempt in
+                                                                 all_login_attempts_for_user_and_ip if
+                                                                 not attempt.success and attempt.timestamp >
+                                                                 last_successful_login_attempt[0].timestamp]
+
+            return len(failed_login_attempts_since_last_successful_login)
+        else:
+            return all_login_attempts_for_user_and_ip.count()
 
     @staticmethod
     def get_all_ip_addresses_for_user(username: str) -> list[dict]:
