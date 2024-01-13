@@ -10,4 +10,6 @@ RUN pip install --no-cache-dir --upgrade pip \
   && pip install --no-cache-dir -r requirements.txt
 
 ENV FLASK_APP=app
-CMD ["python","app.py"]
+
+CMD ["python", "run.py"]
+#CMD ["gunicorn", "--bind", "0.0.0.0:80", "backend:create_app()"]
