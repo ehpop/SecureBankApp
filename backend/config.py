@@ -6,8 +6,9 @@ class Config:
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY")
 
     # Cookie session config
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=1)
     SESSION_COOKIE_SECURE = True
-    PERMANENT_SESSION_LIFETIME = timedelta(minutes=30)
+    SESSION_COOKIE_HTTPONLY = True
 
     # File upload config
     UPLOAD_PATH = os.environ.get("UPLOAD_PATH")
