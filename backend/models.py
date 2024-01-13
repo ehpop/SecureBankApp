@@ -1,44 +1,46 @@
-from flask_sqlalchemy import SQLAlchemy
+import secrets
 from datetime import datetime, timedelta
 
-import bcrypt, secrets
+import bcrypt
+from flask_sqlalchemy import SQLAlchemy
+
+from helpers.generate_numbers import generate_account_number
 
 db = SQLAlchemy()
 
 
 class Users(db.Model):
+    us_lgn = db.Column(db.String, primary_key=True)
+    us_email = db.Column(db.String, unique=True, nullable=False)
     us_nme = db.Column(db.String, nullable=False)
     us_hsh = db.Column(db.String, nullable=False)
-    us_lgn = db.Column(db.String, primary_key=True)
     us_act_nb = db.Column(db.String, unique=True, nullable=False)
-    us_crd_nb = db.Column(db.String, unique=True, nullable=False)
     us_blnc = db.Column(db.Integer, nullable=False)
     salt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
+    us_crd_nb_id = db.Column(db.Integer, db.ForeignKey("credit_cards.crd_id"))
 
     def __repr__(self):
         return f"<User {self.us_lgn}>"
 
     def __str__(self):
-        return f"name: {self.us_nme}, login: {self.us_lgn}, account number: {self.us_act_nb}, card number: {self.us_crd_nb}, balance: {self.us_blnc}"
+        return f"login: {self.us_lgn}, email: {self.us_email}, name: {self.us_nme}, account number: {self.us_act_nb}, balance: {self.us_blnc}"
 
     def to_dict(self):
         return {
-            "name": self.us_nme,
             "login": self.us_lgn,
+            "email": self.us_email,
+            "name": self.us_nme,
             "account_number": self.us_act_nb,
-            "card_number": self.us_crd_nb,
-            "balance": self.us_blnc,
-            "salt_id": self.salt_id
+            "balance": self.us_blnc
         }
 
     def to_json(self):
         return f"""{{
-            "name": "{self.us_nme}",
             "login": "{self.us_lgn}",
+            "email": "{self.us_email}",
+            "name": "{self.us_nme}",
             "account_number": "{self.us_act_nb}",
-            "card_number": "{self.us_crd_nb}",
-            "balance": "{self.us_blnc}",
-            "salt_id": "{self.salt_id}"
+            "balance": "{self.us_blnc}"
         }}"""
 
     @staticmethod
@@ -66,7 +68,7 @@ class Users(db.Model):
 
     @staticmethod
     def is_card_number_taken(card_number: str):
-        return Users.query.where(Users.us_crd_nb == card_number).count() > 0
+        raise NotImplementedError
 
     @staticmethod
     def generate_new_account_number():
@@ -81,14 +83,7 @@ class Users(db.Model):
 
     @staticmethod
     def generate_new_card_number():
-        card_number = generate_card_number()
-        is_card_number_taken = Users.is_card_number_taken(card_number)
-
-        while is_card_number_taken:
-            card_number = generate_card_number()
-            is_card_number_taken = Users.is_card_number_taken(card_number)
-
-        return card_number
+        raise NotImplementedError
 
     def save_user(self):
         db.session.add(self)
@@ -100,10 +95,12 @@ class Users(db.Model):
 
 
 class UserCredentials(db.Model):
-    cmb_id = db.Column(db.Integer, primary_key=True)
+    cmb_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     usr_id = db.Column(db.String, nullable=False)
     pswd_ltrs_nmbrs = db.Column(db.String, nullable=False)
     hsh_val = db.Column(db.String, nullable=False)
+    is_active = db.Column(db.Boolean, default=False, nullable=False)
+    lst_activated_date = db.Column(db.DateTime, default=None, nullable=True)
     slt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
 
     def __repr__(self):
@@ -194,7 +191,7 @@ class Salts(db.Model):
 
 
 class Transactions(db.Model):
-    trns_id = db.Column(db.Integer, primary_key=True)
+    trns_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     act_frm = db.Column(db.String, db.ForeignKey("users.us_act_nb"))
     act_to = db.Column(db.String, db.ForeignKey("users.us_act_nb"))
     trns_amt = db.Column(db.Integer, nullable=False)
@@ -273,11 +270,10 @@ class Transactions(db.Model):
 
 
 class Documents(db.Model):
-    dcm_id = db.Column(db.Integer, primary_key=True)
-    dcm_cnt = db.Column(db.String, nullable=False)
-    dcm_sze = db.Column(db.Integer, nullable=False)
+    dcm_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     dcm_ad_dt = db.Column(db.String, nullable=False)
     dcm_ttl = db.Column(db.String, nullable=False)
+    dcm_typ = db.Column(db.String, nullable=False)
     own_id = db.Column(db.String, db.ForeignKey("users.us_lgn"))
 
 
@@ -375,3 +371,54 @@ class LoginAttempts(db.Model):
         return [{"ip_address": login_attempt.ip_address, "timestamp": login_attempt.timestamp,
                  "success": login_attempt.success} for login_attempt in
                 LoginAttempts.get_all_login_attempts_for_user(username) if login_attempt["success"]]
+
+
+class CreditCards(db.Model):
+    crd_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    crd_nb_hidden = db.Column(db.String, nullable=False)
+    crd_cvc_hidden = db.Column(db.String, nullable=False)
+    crd_exp_dt_hidden = db.Column(db.String, nullable=False)
+    crd_nb = db.Column(db.String, nullable=False)
+    crd_cvc = db.Column(db.String, nullable=False)
+    crd_exp_dt = db.Column(db.String, nullable=False)
+    slt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
+
+    def __repr__(self):
+        return f"<CreditCard {self.crd_id}>"
+
+    def __str__(self):
+        return f"card number: {self.crd_nb_hidden}, card cvc: {self.crd_cvc_hidden}, card expiration date: {self.crd_exp_dt_hidden}, card credit limit: {self.crd_crdt_lmt}, card balance: {self.crd_blnc}"
+
+    def to_dict(self):
+        return {
+            "card_number": self.crd_nb,
+            "card_cvc": self.crd_cvc,
+            "card_expiration_date": self.crd_exp_dt,
+            "card_credit_limit": self.crd_crdt_lmt,
+            "card_balance": self.crd_blnc
+        }
+
+    def to_json(self):
+        return f"""{{
+            "card_number": "{self.crd_nb_hidden}",
+            "card_cvc": "{self.crd_cvc}",
+            "card_expiration_date": "{self.crd_exp_dt}",
+            "card_credit_limit": "{self.crd_crdt_lmt}",
+            "card_balance": "{self.crd_blnc}"
+        }}"""
+
+    def save_credit_card(self):
+        db.session.add(self)
+        db.session.commit()
+
+    @staticmethod
+    def get_credit_card_by_id(card_id: int):
+        return CreditCards.query.where(CreditCards.crd_id == card_id).first()
+
+    @staticmethod
+    def get_credit_card_by_owner(card_owner: str):
+        return CreditCards.query.where(CreditCards.owner_id == card_owner).first()
+
+    @staticmethod
+    def get_credit_card_by_number(card_number: str):
+        return CreditCards.query.where(CreditCards.crd_nb == card_number).first()

@@ -1,22 +1,32 @@
-import flask, bcrypt, secrets, time, pyAesCrypt, io, os
+import io
+import os
+import time
+from datetime import datetime
+
+import bcrypt
+import flask
 from flask import Flask, session, redirect, url_for, request, jsonify
+from werkzeug.utils import secure_filename
+
 from config import Config
-from flask_sqlalchemy import SQLAlchemy
-from helpers.generate_numbers import generate_account_number, generate_card_number, generate_random_consecutive_numbers
-from helpers.password_checker import check_password_strength
-from datetime import datetime, timedelta
 from helpers.auth_wrapper import requires_authentication
 from helpers.file_content_checker import check_file_content_based_on_extension, get_file_extension
 from helpers.file_encrypter import encrypt_file_content_with_key, decrypt_file_content_with_key
-from werkzeug.utils import secure_filename
-
-from models import db, Users, Salts, UserCredentials, Transactions, LoginAttempts
+from helpers.generate_numbers import generate_random_consecutive_numbers, generate_card_data
+from helpers.password_checker import check_password_strength
+from helpers.string_ecrypter import encrypt_string_with_password
+from models import db
 
 app = Flask(__name__)
 app.config.from_object(Config)
+app.app_context().push()
 
 db.init_app(app)
 
+from models import Users, Salts, UserCredentials, Transactions, LoginAttempts, CreditCards
+
+with app.app_context():
+    db.create_all()
 
 @app.route("/health")
 def health():
@@ -37,17 +47,19 @@ def test():
 def register_user():
     time.sleep(app.config['REGISTER_TIMEOUT'])
 
-    app.logger.info(f"Request coming from IP: {request.remote_addr}")
-    username = request.json["username"]
-    password = request.json["password"]
-    name = request.json["name"]
-    lastname = request.json["lastname"]
-
-    if not username and not password and not name and not lastname:
+    try:
+        username = request.json["username"]
+        password = request.json["password"]
+        email = request.json["email"]
+        name = request.json["name"]
+        lastname = request.json["lastname"]
+    except KeyError:
         return jsonify({"error": "Missing data"}), 409
 
+    # TODO: Sanitize input
+
     if Users.is_login_taken(username):
-        app.logger.info(Users.get_user_by_login(username))
+        logger.info(Users.get_user_by_login(username))
         return jsonify({"error": "Username already taken"}), 400
 
     password_strength_errors = check_password_strength(password)
@@ -59,11 +71,29 @@ def register_user():
 
     new_salt = Salts(slt_vl=salt.hex())
     new_salt.save_salt()
+    logger.info(new_salt.to_json())
 
-    app.logger.info(new_salt.to_json())
-    new_user = Users(us_nme=f"{name} {lastname}", us_hsh=hashed_password, us_lgn=username,
-                     us_act_nb=Users.generate_new_account_number(), us_crd_nb=Users.generate_new_card_number(),
-                     us_blnc=0, salt_id=new_salt.slt_id)
+    new_card_details, hidden_card_details = generate_card_data()
+
+    credit_card = CreditCards(crd_nb_hidden=hidden_card_details['card_number'],
+                              crd_cvc_hidden=hidden_card_details['cvc'],
+                              crd_exp_dt_hidden=hidden_card_details['expiry_date'],
+                              crd_nb=encrypt_string_with_password(new_card_details['card_number'], password, salt),
+                              crd_cvc=encrypt_string_with_password(new_card_details['cvc'], password, salt),
+                              crd_exp_dt=encrypt_string_with_password(new_card_details['expiry_date'], password, salt),
+                              slt_id=new_salt.slt_id)
+
+    credit_card.save_credit_card()
+
+    new_user = Users(
+        us_lgn=username,
+        us_email=email,
+        us_nme=f"{name} {lastname}",
+        us_hsh=hashed_password,
+        us_act_nb=Users.generate_new_account_number(),
+        us_crd_nb=credit_card.crd_id,
+        us_blnc=0,
+        salt_id=new_salt.slt_id)
 
     new_user.save_user()
     generated_combinations = []
@@ -84,8 +114,10 @@ def register_user():
         new_salt = Salts(slt_vl=salt.hex())
         new_salt.save_salt()
 
-        user_credentials = UserCredentials(usr_id=username, pswd_ltrs_nmbrs=combination_of_password_letters,
-                                           hsh_val=hashed_password, slt_id=new_salt.slt_id)
+        user_credentials = UserCredentials(usr_id=username,
+                                           pswd_ltrs_nmbrs=combination_of_password_letters,
+                                           hsh_val=hashed_password,
+                                           slt_id=new_salt.slt_id)
         user_credentials.save_user_credentials()
 
     return redirect(url_for('register_success', _method="GET"))
@@ -350,7 +382,3 @@ def get_all_document_names():
         return jsonify({"error": "No files found"}), 400
 
     return jsonify(filenames), 200
-
-
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0")

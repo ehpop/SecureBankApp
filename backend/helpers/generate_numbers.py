@@ -16,17 +16,29 @@ def generate_account_number() -> str:
     return pl_iban
 
 
-def generate_card_data() -> ((str, str, str), (str, str, str)):
+def generate_card_data() -> (dict, dict):
     """
     Generates card data for a user.
-    :return: Tuple of card data and hidden card data
+    :return: Dictionaries of card data and hidden card data
     """
 
     card_number, hidden_card_number = _generate_card_number()
     cvc, hidden_cvc = _generate_random_cvc()
     expiry_date, hidden_expiry_date = _generate_expiry_date()
 
-    return (card_number, cvc, expiry_date), (hidden_card_number, hidden_cvc, hidden_expiry_date)
+    card_dict = {
+        'card_number': card_number,
+        'cvc': cvc,
+        'expiry_date': expiry_date
+    }
+
+    hidden_card_dict = {
+        'card_number': hidden_card_number,
+        'cvc': hidden_cvc,
+        'expiry_date': hidden_expiry_date
+    }
+
+    return card_dict, hidden_card_dict
 
 
 def _generate_card_number() -> (str, str):
