@@ -195,24 +195,19 @@ def login_success():
 @app.route("/transfer_money", methods=["POST"])
 @requires_authentication
 def transfer_money():
-    user = Users.get_user_by_login(session["user_id"])
-    amount = request.json["amount"]
-    recipient_account_number = request.json["recipient_account_number"]
-    transfer_title = request.json["transfer_title"]
-    recipient_user = Users.get_user_by_account(recipient_account_number)
+    try:
+        user = Users.get_user_by_login(session["user_id"])
+        amount = request.json["amount"]
+        recipient_account_number = request.json["recipient_account_number"]
+        transfer_title = request.json["transfer_title"]
+        recipient_user = Users.get_user_by_account(recipient_account_number)
+    except KeyError:
+        return jsonify({"error": "Missing data"}), 400
 
-    if recipient_user is None:
-        return jsonify({"error": "Recipient does not exist"}), 404
-
-    if user.us_blnc < amount:
-        return jsonify({"error": "Insufficient funds"}), 400
-
-    user.us_blnc -= amount
-    recipient_user.us_blnc += amount
-
-    transaction = Transactions(act_frm=user.us_act_nb, act_to=recipient_user.us_act_nb, trns_amt=amount,
-                               trns_dt=datetime.utcnow(), trns_ttl=transfer_title)
-    transaction.save_transaction()
+    try:
+        Transactions.make_transaction(user.us_act_nb, recipient_account_number, amount, transfer_title)
+    except ValueError as e:
+        return jsonify({"error": f"Transfer failed, reason: {str(e)}"}), 400
 
     return jsonify({"message": "Transfer successful"}), 200
 

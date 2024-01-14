@@ -388,6 +388,42 @@ class Transactions(db.Model):
 
         return Transactions.query.where(Transactions.act_frm == user.us_act_nb).all()
 
+    @staticmethod
+    def make_transaction(from_account_number: str, to_account_number: str, amount: int, title="Transfer title",
+                         transfer_date=datetime.utcnow()):
+        """
+        Makes a transaction from one account to another.
+        :param from_account_number: Account number from which the transaction should be made
+        :param to_account_number: Account number to which the transaction should be made
+        :param amount: Amount of money to transfer
+        :param title: Title of the transaction
+        :param transfer_date: Date of the transaction
+        :raises ValueError: If the account from which the transaction should be made does not exist
+        :raises ValueError: If the account to which the transaction should be made does not exist
+        :raises ValueError: If there is not enough money on the account from which the transaction should be made
+        """
+
+        from_account = Users.get_user_by_account(from_account_number)
+        to_account = Users.get_user_by_account(to_account_number)
+
+        if from_account is None:
+            raise ValueError("Account from which you want to make transaction does not exist")
+
+        if to_account is None:
+            raise ValueError("Account to which you want to make transaction does not exist")
+
+        if from_account.us_blnc < amount:
+            raise ValueError("Not enough money on the account")
+
+        from_account.us_blnc -= amount
+        to_account.us_blnc += amount
+
+        transaction = Transactions(act_frm=from_account_number, act_to=to_account_number, trns_amt=amount,
+                                   trns_ttl=title, trns_dt=transfer_date)
+        transaction.save_transaction()
+
+        from_account.save_user()
+        to_account.save_user()
 
 class Documents(db.Model):
     dcm_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
