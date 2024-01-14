@@ -1,10 +1,11 @@
+import math
 import secrets
 from datetime import datetime, timedelta
 
 import bcrypt
 from flask_sqlalchemy import SQLAlchemy
 
-from helpers.generate_numbers import generate_account_number
+from helpers.generate_numbers import generate_account_number, generate_random_consecutive_numbers
 
 db = SQLAlchemy()
 
@@ -80,6 +81,20 @@ class Users(db.Model):
             is_acct_number_taken = Users.is_account_number_taken(acct_number)
 
         return acct_number
+
+    @staticmethod
+    def update_user_password(user_id, new_password, hashed_password, new_salt_id):
+        user = Users.get_user_by_login(user_id)
+
+        try:
+            UserCredentials.delete_all_combinations_for_user(user_id)
+            UserCredentials.generate_new_password_combinations(new_password, user_id)
+        except ValueError:
+            raise ValueError(f"Error occurred while updating password for user {user_id}")
+
+        user.us_hsh = hashed_password
+        user.salt_id = new_salt_id
+        db.session.commit()
 
     @staticmethod
     def generate_new_card_number():
@@ -220,6 +235,44 @@ class UserCredentials(db.Model):
     @staticmethod
     def parse_list_of_numbers_from_string(string: str) -> list[int]:
         return [int(number) for number in string.lstrip("{").rstrip("}").split(",")]
+
+    # TODO: make this depend on app context config
+    @staticmethod
+    def generate_new_password_combinations(plain_password: str, username: str, amount_of_combinations=10,
+                                           amount_of_chars_in_combination=6):
+        if Users.get_user_by_login(username) is None:
+            raise ValueError(f"User with login {username} does not exist")
+
+        generated_combinations = []
+        max_amount_of_combinations = min(math.factorial(len(plain_password)), amount_of_combinations)
+        for _ in range(max_amount_of_combinations):
+            combination_of_password_letters = generate_random_consecutive_numbers(len(plain_password),
+                                                                                  amount_of_chars_in_combination)
+
+            while combination_of_password_letters in generated_combinations:
+                combination_of_password_letters = generate_random_consecutive_numbers(len(plain_password),
+                                                                                      amount_of_chars_in_combination)
+
+            letters_in_password = "".join([plain_password[i - 1] for i in combination_of_password_letters])
+            salt = bcrypt.gensalt()
+            hashed_password = bcrypt.hashpw(letters_in_password.encode("utf-8"), salt).hex()
+
+            new_salt = Salts(slt_vl=salt.hex())
+            new_salt.save_salt()
+
+            user_credentials = UserCredentials(usr_id=username,
+                                               pswd_ltrs_nmbrs=combination_of_password_letters,
+                                               hsh_val=hashed_password,
+                                               slt_id=new_salt.slt_id)
+            user_credentials.save_user_credentials()
+
+    @staticmethod
+    def delete_all_combinations_for_user(user_id: str):
+        if Users.get_user_by_login(user_id) is None:
+            raise ValueError(f"User with login {user_id} does not exist")
+
+        UserCredentials.query.where(UserCredentials.usr_id == user_id).delete()
+        db.session.commit()
 
 
 class Salts(db.Model):
