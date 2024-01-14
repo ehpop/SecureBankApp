@@ -1,8 +1,9 @@
+from typing import IO
+
+import PIL.Image
+from PIL import Image
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
-from PIL import Image
-import io
-from typing import IO
 
 
 def check_pdf_content(bytes_stream: IO[bytes]) -> bool:
@@ -27,8 +28,11 @@ def check_image_content(bytes_stream: IO ) -> bool:
     """
     try:
         Image.open(bytes_stream)
+    except PIL.Image.DecompressionBombWarning:
+        # TODO: Added error handling for decompression bomb warning
+        # f'Image is too large, max amount of pixels is {PIL.Image.MAX_IMAGE_PIXELS} pixels'
+        return False
     except:
-        app.logger.error("Invalid image content")
         return False
 
     return True
