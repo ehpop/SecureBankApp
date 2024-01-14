@@ -11,7 +11,9 @@ from helpers.file_content_checker import check_file_content_based_on_extension, 
 from helpers.file_encrypter import encrypt_file_content_with_key, decrypt_file_content_with_key
 from helpers.generate_numbers import generate_account_number, generate_random_consecutive_numbers, \
     generate_random_password_recovery_code
+from helpers.generate_numbers import generate_card_data
 from helpers.password_checker import check_password_strength
+from helpers.string_ecrypter import encrypt_string_with_password
 
 db = SQLAlchemy()
 
@@ -101,7 +103,21 @@ class Users(db.Model):
         return acct_number
 
     @staticmethod
-    def update_user_password(user_id, new_password, hashed_password, new_salt_id):
+    def update_user_password(user_id, new_password, hashed_password, new_salt_value, new_salt_id):
+        """
+        Updates user password. It generates new password combinations for the user, deletes the old ones,
+        and updates the user's password and salt id in the database.
+
+        **IMPORTANT**: This method deletes old credit card for user and generates a new one, because
+        card data was encrypted with the old password.
+
+        :param user_id:
+        :param new_password:
+        :param hashed_password:
+        :param new_salt_value:
+        :param new_salt_id:
+        :return:
+        """
         user = Users.get_user_by_login(user_id)
 
         try:
@@ -110,8 +126,21 @@ class Users(db.Model):
         except ValueError:
             raise ValueError(f"Error occurred while updating password for user {user_id}")
 
+        old_salt_id = user.salt_id
+        old_credit_card_id = user.us_crd_nb_id
+
         user.us_hsh = hashed_password
         user.salt_id = new_salt_id
+        user.us_crd_nb_id = CreditCards.generate_new_encrypted_credit_card_with_password_and_salt(new_password,
+                                                                                                  new_salt_value,
+                                                                                                  new_salt_id).crd_id
+
+        CreditCards.get_credit_card_by_id(old_credit_card_id).delete_credit_card()
+        try:
+            Salts.get_salt_by_id(old_salt_id).delete_salt()
+        except Exception:
+            raise ValueError(f"Error occurred while deleting salt with id {old_salt_id}")
+
         db.session.commit()
 
     @staticmethod
@@ -304,7 +333,16 @@ class UserCredentials(db.Model):
         if Users.get_user_by_login(user_id) is None:
             raise ValueError(f"User with login {user_id} does not exist")
 
-        UserCredentials.query.where(UserCredentials.usr_id == user_id).delete()
+        all_credentials = UserCredentials.query.where(UserCredentials.usr_id == user_id)
+        all_credentials_salt_ids = [credential.slt_id for credential in all_credentials]
+        all_credentials.delete()
+        db.session.commit()
+
+        for salt_id in all_credentials_salt_ids:
+            try:
+                Salts.get_salt_by_id(salt_id).delete_salt()
+            except Exception:
+                raise ValueError(f"Error occurred while deleting salt with id {salt_id}")
         db.session.commit()
 
 
@@ -778,6 +816,10 @@ class CreditCards(db.Model):
         db.session.add(self)
         db.session.commit()
 
+    def delete_credit_card(self):
+        db.session.delete(self)
+        db.session.commit()
+
     @staticmethod
     def get_credit_card_by_id(card_id: int):
         return CreditCards.query.where(CreditCards.crd_id == card_id).first()
@@ -789,6 +831,23 @@ class CreditCards(db.Model):
     @staticmethod
     def get_credit_card_by_number(card_number: str):
         return CreditCards.query.where(CreditCards.crd_nb == card_number).first()
+
+    @staticmethod
+    def generate_new_encrypted_credit_card_with_password_and_salt(password, salt, salt_id):
+        new_card_details, hidden_card_details = generate_card_data()
+
+        credit_card = CreditCards(crd_nb_hidden=hidden_card_details['card_number'],
+                                  crd_cvc_hidden=hidden_card_details['cvc'],
+                                  crd_exp_dt_hidden=hidden_card_details['expiry_date'],
+                                  crd_nb=encrypt_string_with_password(new_card_details['card_number'], password, salt),
+                                  crd_cvc=encrypt_string_with_password(new_card_details['cvc'], password, salt),
+                                  crd_exp_dt=encrypt_string_with_password(new_card_details['expiry_date'], password,
+                                                                          salt),
+                                  slt_id=salt_id)
+
+        credit_card.save_credit_card()
+
+        return credit_card
 
 
 class PasswordRecoveryCodes(db.Model):

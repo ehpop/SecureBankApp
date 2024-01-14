@@ -9,9 +9,7 @@ from flask import Flask, session, redirect, url_for, request, jsonify
 
 from config import Config
 from helpers.auth_wrapper import requires_authentication
-from helpers.generate_numbers import generate_card_data
 from helpers.password_checker import check_password_strength
-from helpers.string_ecrypter import encrypt_string_with_password
 from models import db
 from views_helper import check_if_password_is_same_as_previous, hash_new_password_with_new_salt, \
     check_if_user_provided_correct_password, verify_provided_password_recovery_code
@@ -67,7 +65,6 @@ def register_user():
     # TODO: Sanitize input
 
     if Users.is_login_taken(username):
-        logger.info(Users.get_user_by_login(username))
         return jsonify({"error": "Username already taken"}), 400
 
     password_strength_errors = check_password_strength(password)
@@ -79,19 +76,10 @@ def register_user():
 
     new_salt = Salts(slt_vl=salt.hex())
     new_salt.save_salt()
-    logger.info(new_salt.to_json())
 
-    new_card_details, hidden_card_details = generate_card_data()
-
-    credit_card = CreditCards(crd_nb_hidden=hidden_card_details['card_number'],
-                              crd_cvc_hidden=hidden_card_details['cvc'],
-                              crd_exp_dt_hidden=hidden_card_details['expiry_date'],
-                              crd_nb=encrypt_string_with_password(new_card_details['card_number'], password, salt),
-                              crd_cvc=encrypt_string_with_password(new_card_details['cvc'], password, salt),
-                              crd_exp_dt=encrypt_string_with_password(new_card_details['expiry_date'], password, salt),
-                              slt_id=new_salt.slt_id)
-
-    credit_card.save_credit_card()
+    credit_card = CreditCards.generate_new_encrypted_credit_card_with_password_and_salt(password,
+                                                                                        new_salt,
+                                                                                        new_salt.slt_id)
 
     new_user = Users(
         us_lgn=username,
@@ -356,6 +344,8 @@ def change_password_post():
     except KeyError:
         return jsonify({"error": "Missing data"}), 400
 
+    user_id = session['user_id']
+
     response = check_if_user_provided_correct_password(session, old_password)
     if response:
         return response
@@ -371,7 +361,7 @@ def change_password_post():
     new_salt, hashed_password = hash_new_password_with_new_salt(new_password)
 
     try:
-        Users.update_user_password(user_id, new_password, hashed_password, new_salt.slt_id)
+        Users.update_user_password(user_id, new_password, hashed_password, new_salt.slt_vl, new_salt.slt_id)
     except ValueError:
         return jsonify({"error": "Password could not be changed"}), 400
 
@@ -418,9 +408,10 @@ def password_recovery_verify(password_recovery_code: str):
 def password_recovery_verify_post(password_recovery_code: str):
     time.sleep(app.config['PASSWORD_RECOVERY_TIMEOUT'])
 
-    response = verify_provided_password_recovery_code(password_recovery_code)
-    if response:
-        return response
+    try:
+        code_object = verify_provided_password_recovery_code(password_recovery_code)
+    except ValueError as e:
+        return jsonify({"error": f"{e}"}), 400
 
     try:
         new_password = request.form['new_password']
@@ -439,7 +430,7 @@ def password_recovery_verify_post(password_recovery_code: str):
     new_salt, hashed_password = hash_new_password_with_new_salt(new_password)
 
     try:
-        Users.update_user_password(code_object.user_id, new_password, hashed_password, new_salt.slt_id)
+        Users.update_user_password(code_object.user_id, new_password, hashed_password, new_salt.slt_vl, new_salt.slt_id)
         code_object.delete_password_recovery_code()
     except ValueError:
         return jsonify({"error": "Password could not be changed"}), 400

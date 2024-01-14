@@ -58,10 +58,12 @@ def verify_provided_password_recovery_code(password_recovery_code: str):
     try:
         code_object = PasswordRecoveryCodes.get_password_recovery_code_by_code(password_recovery_code)
     except ValueError:
-        return jsonify({"error": "Password recovery code not found"}), 400
+        raise ValueError("Password recovery code not found")
 
-    if code_object is None:
-        return jsonify({"error": "Password recovery code not found"}), 400
+    if not code_object:
+        raise ValueError("Password recovery code not found")
 
     if not PasswordRecoveryCodes.is_code_valid(code_object.code):
-        return jsonify({"error": "Password recovery code expired"}), 400
+        raise ValueError("Password recovery code is not valid")
+
+    return code_object
