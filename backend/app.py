@@ -1,18 +1,15 @@
 import io
 import os
 import time
-from datetime import datetime
 
 import PIL
 import bcrypt
 import flask
 from flask import Flask, session, redirect, url_for, request, jsonify
-from werkzeug.utils import secure_filename
 
 from config import Config
 from helpers.auth_wrapper import requires_authentication
-from helpers.file_content_checker import check_file_content_based_on_extension, get_file_extension
-from helpers.file_encrypter import encrypt_file_content_with_key, decrypt_file_content_with_key
+from helpers.file_encrypter import decrypt_file_content_with_key
 from helpers.generate_numbers import generate_card_data
 from helpers.password_checker import check_password_strength
 from helpers.string_ecrypter import encrypt_string_with_password
@@ -41,6 +38,7 @@ def health():
 def unauthorized():
     return flask.render_template("unauthorized.html")
 
+
 @app.route("/test", methods=["GET", "POST"])
 def test():
     return flask.render_template("test.html")
@@ -49,6 +47,7 @@ def test():
 @app.route("/register", methods=["GET"])
 def register():
     return flask.render_template("register.html")
+
 
 @app.route("/register", methods=["POST"])
 def register_user():
@@ -150,6 +149,7 @@ def get_password_combination(user_id: str):
 @app.route("/login", methods=["GET"])
 def login():
     return flask.render_template("login.html")
+
 
 @app.route("/login", methods=["POST"])
 def login_user():
@@ -253,52 +253,16 @@ def send_document():
     except KeyError:
         return jsonify({"error": "Missing data"}), 400
 
-    if uploaded_file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
+    try:
+        document = Documents.save_encrypted_document(user_id,
+                                                     password,
+                                                     uploaded_file,
+                                                     app.config['ALLOWED_EXTENSIONS'],
+                                                     app.config['UPLOAD_PATH'])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
-    uploaded_file_content = uploaded_file.stream.read()
-    uploaded_file_name = secure_filename(uploaded_file.filename)
-
-    if not password or not user_id:
-        return jsonify({"error": "Unauthorized request"}), 401
-
-    errors = check_password_strength(password)
-    if errors:
-        return jsonify(errors), 400
-
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt).hex()
-    new_salt = Salts(slt_vl=salt.hex())
-    new_salt.save_salt()
-
-    file_extension = get_file_extension(uploaded_file_name)
-
-    if not file_extension in app.config['UPLOAD_EXTENSIONS']:
-        return jsonify({"error": "Invalid file extension"}), 400
-
-    if not check_file_content_based_on_extension(uploaded_file.stream, file_extension):
-        return jsonify({"error": "Invalid file content"}), 400
-
-    user_custom_path = os.path.join(app.config['UPLOAD_PATH'], user_id)
-    if not os.path.exists(user_custom_path):
-        os.makedirs(user_custom_path)
-
-    salt = bytes.fromhex(Salts.get_salt_by_id(Users.get_user_by_login(user_id).salt_id).slt_vl)
-    file_encrypted = encrypt_file_content_with_key(uploaded_file_content, password, salt)
-
-    with open(os.path.join(user_custom_path, uploaded_file_name + '.aes'), "wb") as f:
-        f.write(file_encrypted)
-
-    document = Documents(own_id=user_id,
-                         dcm_ttl=uploaded_file_name,
-                         dcm_typ=file_extension,
-                         dcm_hsh=hashed_password,
-                         dcm_slt_id=new_salt.slt_id,
-                         dcm_ad_dt=datetime.utcnow())
-
-    document.save_document()
-
-    return jsonify({"message": "File uploaded successfully"}), 200
+    return jsonify({"message": f"File {document.dcm_ttl} uploaded successfully"}), 200
 
 
 @app.route('/get_document', methods=['GET'])

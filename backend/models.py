@@ -503,6 +503,60 @@ class Documents(db.Model):
     def get_document_for_user_by_filename(user_login: str, filename: str):
         return Documents.query.where(Documents.own_id == user_login).where(Documents.dcm_ttl == filename).first()
 
+    @staticmethod
+    def save_encrypted_document(user_id: str, password: str, uploaded_file, allowed_extensions: list[str],
+                                upload_path: str):
+        if uploaded_file.filename == '':
+            raise ValueError("No selected file")
+
+        uploaded_file_content = uploaded_file.stream.read()
+        uploaded_file_name = secure_filename(uploaded_file.filename)
+
+        if not password or not user_id:
+            raise ValueError("Unauthorized request")
+
+        errors = check_password_strength(password)
+        if errors:
+            raise ValueError(errors)
+
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt).hex()
+        new_salt = Salts(slt_vl=salt.hex())
+        new_salt.save_salt()
+
+        file_extension = get_file_extension(uploaded_file_name)
+
+        if not file_extension in allowed_extensions:
+            raise ValueError("Invalid file extension")
+
+        if not check_file_content_based_on_extension(uploaded_file.stream, file_extension):
+            raise ValueError("Invalid file content")
+
+        try:
+            user_custom_path = os.path.join(upload_path, user_id)
+            if not os.path.exists(user_custom_path):
+                os.makedirs(user_custom_path)
+
+            salt = bytes.fromhex(Salts.get_salt_by_id(Users.get_user_by_login(user_id).salt_id).slt_vl)
+            file_encrypted = encrypt_file_content_with_key(uploaded_file_content, password, salt)
+
+            with open(os.path.join(user_custom_path, uploaded_file_name + '.aes'), "wb") as f:
+                f.write(file_encrypted)
+
+        except Exception:
+            raise ValueError("Error occurred while encrypting file")
+
+        document = Documents(own_id=user_id,
+                             dcm_ttl=uploaded_file_name,
+                             dcm_typ=file_extension,
+                             dcm_hsh=hashed_password,
+                             dcm_slt_id=new_salt.slt_id,
+                             dcm_ad_dt=datetime.utcnow())
+
+        document.save_document()
+
+        return document
+
 
 class LoginAttempts(db.Model):
     id = db.Column(db.Integer, primary_key=True)
