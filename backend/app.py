@@ -9,7 +9,6 @@ from flask import Flask, session, redirect, url_for, request, jsonify
 
 from config import Config
 from helpers.auth_wrapper import requires_authentication
-from helpers.file_encrypter import decrypt_file_content_with_key
 from helpers.generate_numbers import generate_card_data
 from helpers.password_checker import check_password_strength
 from helpers.string_ecrypter import encrypt_string_with_password
@@ -289,38 +288,32 @@ def get_document():
         return jsonify({"error": "Missing data"}), 400
 
     user_id = session['user_id']
-    is_authenticated = session['authenticated']
-
-    if not is_authenticated or not user_id:
-        return jsonify({"error": "Unauthorized request"}), 401
-
-    document = Documents.get_document_for_user_by_filename(user_id, filename)
-
-    if document is None:
-        return jsonify({"error": "File not found"}), 400
-
-    filename = document.dcm_ttl
-    passw = password.encode("utf-8")
-    hashed_password = bytes.fromhex(document.dcm_hsh)
-
-    if not bcrypt.checkpw(passw, hashed_password):
-        return jsonify({"error": "Wrong credentials"}), 401
-
-    user_custom_path = os.path.join(app.config['UPLOAD_PATH'], user_id)
 
     try:
-        with open(os.path.join(user_custom_path, filename + '.aes'), "rb") as f:
-            content = f.read()
-    except FileNotFoundError:
-        return jsonify({"error": "File not found"}), 400
-
-    if not content:
-        return jsonify({"error": "No file found"}), 400
-
-    salt = bytes.fromhex(Salts.get_salt_by_id(Users.get_user_by_login(user_id).salt_id).slt_vl)
-    decrypted_data = decrypt_file_content_with_key(content, password, salt)
+        decrypted_data = Documents.read_encrypted_document(user_id, filename, password, app.config['UPLOAD_PATH'])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     return flask.send_file(io.BytesIO(decrypted_data), as_attachment=True, download_name=filename)
+
+
+@app.route('/delete_document', methods=['POST'])
+@requires_authentication
+def delete_document():
+    try:
+        password = request.form['password']
+        filename = request.form['filename']
+    except KeyError:
+        return jsonify({"error": "Missing data"}), 400
+
+    user_id = session['user_id']
+
+    try:
+        Documents.delete_encrypted_document_from_server(user_id, filename, password, app.config['UPLOAD_PATH'])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify({"message": f"File {filename} deleted successfully"}), 200
 
 
 @app.route('/get_all_document_names', methods=['POST'])

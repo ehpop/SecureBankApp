@@ -8,7 +8,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 
 from helpers.file_content_checker import check_file_content_based_on_extension, get_file_extension
-from helpers.file_encrypter import encrypt_file_content_with_key
+from helpers.file_encrypter import encrypt_file_content_with_key, decrypt_file_content_with_key
 from helpers.generate_numbers import generate_account_number, generate_random_consecutive_numbers, \
     generate_random_password_recovery_code
 from helpers.password_checker import check_password_strength
@@ -54,7 +54,7 @@ class Users(db.Model):
         db.session.add(self)
         db.session.commit()
 
-    def remove_user(self):
+    def delete_user(self):
         db.session.delete(self)
         db.session.commit()
 
@@ -334,7 +334,7 @@ class Salts(db.Model):
         db.session.add(self)
         db.session.commit()
 
-    def remove_salt(self):
+    def delete_salt(self):
         db.session.delete(self)
         db.session.commit()
 
@@ -494,6 +494,10 @@ class Documents(db.Model):
         db.session.add(self)
         db.session.commit()
 
+    def delete_document(self):
+        db.session.delete(self)
+        db.session.commit()
+
     @staticmethod
     def get_document_by_id(document_id: int):
         return Documents.query.where(Documents.dcm_id == document_id).first()
@@ -570,6 +574,65 @@ class Documents(db.Model):
         document.save_document()
 
         return document
+
+    @staticmethod
+    def __verify_access_to_file__(document, password):
+        if not document:
+            raise ValueError("File not found")
+
+        passw = password.encode("utf-8")
+        hashed_password = bytes.fromhex(document.dcm_hsh)
+
+        if not bcrypt.checkpw(passw, hashed_password):
+            raise ValueError("Wrong credentials")
+
+    @staticmethod
+    def read_encrypted_document(user_id: str, filename: str, password: str, upload_path: str):
+        document = Documents.get_document_for_user_by_filename(user_id, filename)
+
+        try:
+            Documents.__verify_access_to_file__(document, password)
+        except ValueError:
+            raise ValueError("Wrong credentials")
+
+        filename = document.dcm_ttl
+        user_custom_path = os.path.join(upload_path, user_id)
+
+        try:
+            with open(os.path.join(user_custom_path, filename + '.aes'), "rb") as f:
+                content = f.read()
+        except FileNotFoundError:
+            raise ValueError("File not found")
+
+        if not content:
+            raise ValueError("File is empty")
+
+        salt = bytes.fromhex(Salts.get_salt_by_id(Users.get_user_by_login(user_id).salt_id).slt_vl)
+        decrypted_data = decrypt_file_content_with_key(content, password, salt)
+
+        return decrypted_data
+
+    @staticmethod
+    def delete_encrypted_document_from_server(user_id: str, filename: str, password: str, upload_path: str):
+        document = Documents.get_document_for_user_by_filename(user_id, filename)
+
+        try:
+            Documents.__verify_access_to_file__(document, password)
+        except ValueError as access_error:
+            raise access_error
+
+        filename = document.dcm_ttl
+        user_custom_path = os.path.join(upload_path, user_id)
+
+        try:
+            os.remove(os.path.join(user_custom_path, filename + '.aes'))
+        except FileNotFoundError:
+            raise ValueError("File not found")
+
+        documents_salt_id = document.dcm_slt_id
+
+        document.delete_document()
+        Salts.get_salt_by_id(documents_salt_id).delete_salt()
 
 
 class LoginAttempts(db.Model):
