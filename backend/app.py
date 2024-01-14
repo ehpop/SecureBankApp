@@ -200,7 +200,6 @@ def transfer_money():
         amount = request.json["amount"]
         recipient_account_number = request.json["recipient_account_number"]
         transfer_title = request.json["transfer_title"]
-        recipient_user = Users.get_user_by_account(recipient_account_number)
     except KeyError:
         return jsonify({"error": "Missing data"}), 400
 
