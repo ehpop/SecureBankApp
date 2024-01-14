@@ -34,10 +34,9 @@ def health():
     return f"<h1>Healthy</h1>"
 
 
-@app.route("/session")
-def session_info():
-    return f"<h1>{session}</h1>"
-
+@app.route("/unauthorized", methods=["GET"])
+def unauthorized():
+    return flask.render_template("unauthorized.html")
 
 @app.route("/test", methods=["GET", "POST"])
 def test():
