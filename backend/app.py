@@ -14,6 +14,8 @@ from helpers.generate_numbers import generate_card_data
 from helpers.password_checker import check_password_strength
 from helpers.string_ecrypter import encrypt_string_with_password
 from models import db
+from views_helper import check_if_password_is_same_as_previous, hash_new_password_with_new_salt, \
+    check_if_user_provided_correct_password, verify_provided_password_recovery_code
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -188,8 +190,13 @@ def transfer_money():
         amount = request.json["amount"]
         recipient_account_number = request.json["recipient_account_number"]
         transfer_title = request.json["transfer_title"]
+        password = request.json["password"]
     except KeyError:
         return jsonify({"error": "Missing data"}), 400
+
+    response = check_if_user_provided_correct_password(session, password)
+    if response:
+        return response
 
     try:
         Transactions.make_transaction(user.us_act_nb, recipient_account_number, amount, transfer_title)
@@ -258,7 +265,7 @@ def send_document():
         document = Documents.save_encrypted_document(user_id,
                                                      password,
                                                      uploaded_file,
-                                                     app.config['ALLOWED_EXTENSIONS'],
+                                                     app.config['UPLOAD_EXTENSIONS'],
                                                      app.config['UPLOAD_PATH'])
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -324,27 +331,17 @@ def get_all_document_names():
     except KeyError:
         return jsonify({"error": "Missing data"}), 400
 
+    response = check_if_user_provided_correct_password(session, password)
+    if response:
+        return response
+
     user_id = session['user_id']
-    is_authenticated = session['authenticated']
-
-    if not is_authenticated or not user_id:
-        return jsonify({"error": "Unauthorized request"}), 401
-
-    passw = password.encode("utf-8")
-    hashed_password = bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)
-
-    if not bcrypt.checkpw(passw, hashed_password):
-        return jsonify({"error": "Wrong credentials"}), 401
-
     user_custom_path = os.path.join(app.config['UPLOAD_PATH'], user_id)
 
     try:
         filenames = [filename[:-4] for filename in os.listdir(user_custom_path) if filename.endswith(".aes")]
     except FileNotFoundError:
-        return jsonify({"error": "File not found"}), 400
-
-    if not filenames:
-        return jsonify({"error": "No files found"}), 400
+        filenames = []
 
     return jsonify(filenames), 200
 
@@ -366,32 +363,19 @@ def change_password_post():
     except KeyError:
         return jsonify({"error": "Missing data"}), 400
 
-    user_id = session['user_id']
-    is_authenticated = session['authenticated']
+    response = check_if_user_provided_correct_password(session, old_password)
+    if response:
+        return response
 
-    if not is_authenticated or not user_id:
-        return jsonify({"error": "Unauthorized request"}), 401
-
-    passw = old_password.encode("utf-8")
-    hashed_password = bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)
-
-    if not bcrypt.checkpw(passw, hashed_password):
-        return jsonify({"error": "Wrong credentials"}), 401
-
-    new_password_hashed_with_old_salt = bcrypt.hashpw(new_password.encode("utf-8"),
-                                                      bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)).hex()
-    if new_password_hashed_with_old_salt == Users.get_user_by_login(user_id).us_hsh:
-        return jsonify({"error": "New password cannot be the same as old password"}), 400
+    is_password_same = check_if_password_is_same_as_previous(new_password, user_id)
+    if is_password_same:
+        return is_password_same
 
     password_strength_errors = check_password_strength(new_password)
     if password_strength_errors:
         return password_strength_errors, 400
 
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(new_password.encode("utf-8"), salt).hex()
-
-    new_salt = Salts(slt_vl=salt.hex())
-    new_salt.save_salt()
+    new_salt, hashed_password = hash_new_password_with_new_salt(new_password)
 
     try:
         Users.update_user_password(user_id, new_password, hashed_password, new_salt.slt_id)
@@ -430,16 +414,9 @@ def password_recovery_post():
 
 @app.route('/password_recovery/verify/<password_recovery_code>', methods=['GET'])
 def password_recovery_verify(password_recovery_code: str):
-    try:
-        code_object = PasswordRecoveryCodes.get_password_recovery_code_by_code(password_recovery_code)
-    except ValueError:
-        return jsonify({"error": "Password recovery code not found"}), 400
-
-    if code_object is None:
-        return jsonify({"error": "Password recovery code not found"}), 400
-
-    if not PasswordRecoveryCodes.is_code_valid(code_object.code):
-        return jsonify({"error": "Password recovery code expired"}), 400
+    response = verify_provided_password_recovery_code(password_recovery_code)
+    if response:
+        return response
 
     return flask.render_template('password_recovery_verify_form.html')
 
@@ -448,16 +425,9 @@ def password_recovery_verify(password_recovery_code: str):
 def password_recovery_verify_post(password_recovery_code: str):
     time.sleep(app.config['PASSWORD_RECOVERY_TIMEOUT'])
 
-    try:
-        code_object = PasswordRecoveryCodes.get_password_recovery_code_by_code(password_recovery_code)
-    except ValueError:
-        return jsonify({"error": "Password recovery code not found"}), 400
-
-    if code_object is None:
-        return jsonify({"error": "Password recovery code not found"}), 400
-
-    if not PasswordRecoveryCodes.is_code_valid(code_object.code):
-        return jsonify({"error": "Password recovery code expired"}), 400
+    response = verify_provided_password_recovery_code(password_recovery_code)
+    if response:
+        return response
 
     try:
         new_password = request.form['new_password']
@@ -465,20 +435,15 @@ def password_recovery_verify_post(password_recovery_code: str):
     except KeyError:
         return jsonify({"error": "Missing data"}), 400
 
-    new_password_hashed_with_old_salt = bcrypt.hashpw(new_password.encode("utf-8"),
-                                                      bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)).hex()
-    if new_password_hashed_with_old_salt == Users.get_user_by_login(user_id).us_hsh:
-        return jsonify({"error": "New password cannot be the same as old password"}), 400
+    is_password_same = check_if_password_is_same_as_previous(new_password, user_id)
+    if is_password_same:
+        return is_password_same
 
     password_strength_errors = check_password_strength(new_password)
     if password_strength_errors:
         return password_strength_errors, 400
 
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(new_password.encode("utf-8"), salt).hex()
-
-    new_salt = Salts(slt_vl=salt.hex())
-    new_salt.save_salt()
+    new_salt, hashed_password = hash_new_password_with_new_salt(new_password)
 
     try:
         Users.update_user_password(code_object.user_id, new_password, hashed_password, new_salt.slt_id)

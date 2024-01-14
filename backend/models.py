@@ -1,12 +1,17 @@
 import math
+import os
 import secrets
 from datetime import datetime, timedelta
 
 import bcrypt
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.utils import secure_filename
 
+from helpers.file_content_checker import check_file_content_based_on_extension, get_file_extension
+from helpers.file_encrypter import encrypt_file_content_with_key
 from helpers.generate_numbers import generate_account_number, generate_random_consecutive_numbers, \
     generate_random_password_recovery_code
+from helpers.password_checker import check_password_strength
 
 db = SQLAlchemy()
 
@@ -518,6 +523,9 @@ class Documents(db.Model):
         uploaded_file_content = uploaded_file.stream.read()
         uploaded_file_name = secure_filename(uploaded_file.filename)
 
+        if not uploaded_file_name:
+            raise ValueError("Invalid file name. Please change it before uploading again.")
+
         if not password or not user_id:
             raise ValueError("Unauthorized request")
 
@@ -550,7 +558,7 @@ class Documents(db.Model):
                 f.write(file_encrypted)
 
         except Exception:
-            raise ValueError("Error occurred while encrypting file")
+            raise ValueError(f"Error occurred while encrypting file.")
 
         document = Documents(own_id=user_id,
                              dcm_ttl=uploaded_file_name,
