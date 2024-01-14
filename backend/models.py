@@ -341,7 +341,55 @@ class Documents(db.Model):
     dcm_ad_dt = db.Column(db.String, nullable=False)
     dcm_ttl = db.Column(db.String, nullable=False)
     dcm_typ = db.Column(db.String, nullable=False)
+    dcm_hsh = db.Column(db.String, nullable=False)
+    dcm_slt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
     own_id = db.Column(db.String, db.ForeignKey("users.us_lgn"))
+
+    def __repr__(self):
+        return f"<Document {self.dcm_id}>"
+
+    def __str__(self):
+        return f"date: {self.dcm_ad_dt}, title: {self.dcm_ttl}, type: {self.dcm_typ}, owner: {self.own_id}"
+
+    def to_dict(self):
+        return {
+            "date": self.dcm_ad_dt,
+            "title": self.dcm_ttl,
+            "type": self.dcm_typ,
+            "owner": self.own_id
+        }
+
+    def to_json(self):
+        return f"""{{
+            "date": "{self.dcm_ad_dt}",
+            "title": "{self.dcm_ttl}",
+            "type": "{self.dcm_typ}",
+            "owner": "{self.own_id}"
+        }}"""
+
+    def save_document(self):
+        db.session.add(self)
+        db.session.commit()
+
+    @staticmethod
+    def get_document_by_id(document_id: int):
+        return Documents.query.where(Documents.dcm_id == document_id).first()
+
+    @staticmethod
+    def get_all_documents():
+        return Documents.query.all()
+
+    @staticmethod
+    def get_all_documents_for_user(user_login: str):
+        return Documents.query.where(Documents.own_id == user_login).all()
+
+    @staticmethod
+    def get_all_documents_for_user_by_type(user_login: str, document_type: str):
+        return Documents.query.where(Documents.own_id == user_login).where(Documents.dcm_typ == document_type).all()
+
+    @staticmethod
+    def get_document_for_user_by_filename(user_login: str, filename: str):
+        return Documents.query.where(Documents.own_id == user_login).where(Documents.dcm_ttl == filename).first()
 
 
 class LoginAttempts(db.Model):
