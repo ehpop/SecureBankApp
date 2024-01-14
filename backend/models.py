@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 import bcrypt
 from flask_sqlalchemy import SQLAlchemy
 
-from helpers.generate_numbers import generate_account_number, generate_random_consecutive_numbers
+from helpers.generate_numbers import generate_account_number, generate_random_consecutive_numbers, \
+    generate_random_password_recovery_code
 
 db = SQLAlchemy()
 
@@ -55,6 +56,10 @@ class Users(db.Model):
     @staticmethod
     def get_user_by_login(login: str):
         return Users.query.where(Users.us_lgn == login).first()
+
+    @staticmethod
+    def get_user_by_email(email: str):
+        return Users.query.where(Users.us_email == email).first()
 
     @staticmethod
     def get_user_by_account(account_number: str):
@@ -109,12 +114,13 @@ class Users(db.Model):
         raise NotImplementedError
 
     @staticmethod
-    def login_user(username: str, password: str, ip_addr: str, combination_id: str, max_failed_login_attempts: int = 5):
+    def login_user(username: str, password: str, ip_address: str, combination_id: str,
+                   max_failed_login_attempts: int = 5):
         user = Users.get_user_by_login(username)
         if user is None:
             raise ValueError("Wrong credentials")
 
-        login_attempt = LoginAttempts(username=username, ip_address=ip_addr, success=False)
+        login_attempt = LoginAttempts(username=username, ip_address=ip_address, success=False)
 
         if LoginAttempts.calculate_failed_login_attempts_in_period(username,
                                                                    ip_address) >= max_failed_login_attempts:
@@ -712,3 +718,128 @@ class CreditCards(db.Model):
     @staticmethod
     def get_credit_card_by_number(card_number: str):
         return CreditCards.query.where(CreditCards.crd_nb == card_number).first()
+
+
+class PasswordRecoveryCodes(db.Model):
+    TIME_ALLOWED_FOR_PASSWORD_RECOVERY = 5
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.String, db.ForeignKey("users.us_lgn"))
+    code = db.Column(db.String(64), unique=True, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<PasswordRecoveryCode {self.id}>"
+
+    def __str__(self):
+        return f"user_id: {self.user_id}, code: {self.code}, timestamp: {self.timestamp}"
+
+    def to_dict(self):
+        return {
+            "user_id": self.user_id,
+            "code": self.code,
+            "timestamp": self.timestamp
+        }
+
+    def to_json(self):
+        return f"""{{
+            "user_id": "{self.user_id}",
+            "code": "{self.code}",
+            "timestamp": "{self.timestamp}"
+        }}"""
+
+    def save_password_recovery_code(self):
+        db.session.add(self)
+        db.session.commit()
+
+    def delete_password_recovery_code(self):
+        db.session.delete(self)
+        db.session.commit()
+
+    @staticmethod
+    def get_password_recovery_code_by_id(code_id: int):
+        return PasswordRecoveryCodes.query.where(PasswordRecoveryCodes.id == code_id).first()
+
+    @staticmethod
+    def get_password_recovery_code_by_code(code: str):
+        return PasswordRecoveryCodes.query.where(PasswordRecoveryCodes.code == code).first()
+
+    @staticmethod
+    def get_password_recovery_code_by_user_id(user_id: str):
+        return PasswordRecoveryCodes.query.where(PasswordRecoveryCodes.user_id == user_id).first()
+
+    @staticmethod
+    def get_password_recovery_code_by_user_email(user_email: str):
+        user = Users.get_user_by_email(user_email)
+        if user is None:
+            return None
+
+        return PasswordRecoveryCodes.get_password_recovery_code_by_user_id(user.us_lgn)
+
+    @staticmethod
+    def is_code_taken(code: str):
+        return PasswordRecoveryCodes.query.where(PasswordRecoveryCodes.code == code).count() > 0
+
+    @staticmethod
+    def generate_new_unique_password_recovery_code_for_user(user_email: str):
+        """
+        Generates a new unique password recovery code for a user. If the user already has a password recovery code,
+        it checks if it is still valid. If it is, it returns the old code. If it is not, it generates a new one, and
+        deletes the old one.
+        :return: password recovery code
+        :raises ValueError: If the user does not exist
+        """
+        user = Users.get_user_by_email(user_email)
+        if user is None:
+            raise ValueError(f"User with email {user_email} does not exist")
+
+        code_for_user = PasswordRecoveryCodes.get_password_recovery_code_by_user_id(user.us_lgn)
+        if code_for_user is not None:
+            if code_for_user.timestamp > datetime.utcnow() - timedelta(
+                    minutes=PasswordRecoveryCodes.TIME_ALLOWED_FOR_PASSWORD_RECOVERY):
+                return code_for_user.code
+            else:
+                code_for_user.delete_password_recovery_code()
+
+        code = generate_random_password_recovery_code()
+        is_code_taken = PasswordRecoveryCodes.is_code_taken(code)
+
+        while is_code_taken:
+            code = generate_random_password_recovery_code()
+            is_code_taken = PasswordRecoveryCodes.is_code_taken(code)
+
+        password_recovery_code = PasswordRecoveryCodes(user_id=user.us_lgn, code=code, timestamp=datetime.utcnow())
+        password_recovery_code.save_password_recovery_code()
+
+        return password_recovery_code.code
+
+    @staticmethod
+    def is_code_valid(code: str) -> bool:
+        """
+        Checks if the password recovery code is valid. Meaning that it was generated less than
+        PasswordRecoveryCodes.TIME_ALLOWED_FOR_PASSWORD_RECOVERY minutes ago.
+        :param code: password recovery code to check
+        :return: True if the password recovery code is valid, False otherwise
+        """
+        password_recovery_code = PasswordRecoveryCodes.query.where(PasswordRecoveryCodes.code == code).first()
+
+        if password_recovery_code is None:
+            return False
+
+        return password_recovery_code.timestamp > datetime.utcnow() - timedelta(
+            minutes=PasswordRecoveryCodes.TIME_ALLOWED_FOR_PASSWORD_RECOVERY)
+
+    @staticmethod
+    def send_password_recovery_code(user_email, code, logger):
+        """
+        Sends password recovery code to the user.
+        :param user_email: email of the user
+        :param code: password recovery code
+        :param logger: logger object, used temporary instead of actual email sending
+        :raises ValueError: If the user does not exist
+        """
+        user = Users.get_user_by_email(user_email)
+        if user is None:
+            raise ValueError(f"User with email {user_email} does not exist")
+
+        logger.info(f"Sending password recovery code {code} to email: {user_email}")

@@ -2,9 +2,9 @@ import io
 import os
 import time
 
-import PIL
 import bcrypt
 import flask
+from PIL.Image import Image
 from flask import Flask, session, redirect, url_for, request, jsonify
 
 from config import Config
@@ -22,11 +22,12 @@ app.app_context().push()
 db.init_app(app)
 logger = app.logger
 
-from models import Users, Salts, UserCredentials, Transactions, LoginAttempts, CreditCards, Documents
+from models import Users, Salts, UserCredentials, Transactions, LoginAttempts, CreditCards, Documents, \
+    PasswordRecoveryCodes
 
 with app.app_context():
     db.create_all()
-    PIL.Image.MAX_IMAGE_PIXELS = app.config['MAX_PIL_IMAGE_PIXELS']
+    Image.MAX_IMAGE_PIXELS = app.config['MAX_PIL_IMAGE_PIXELS']
 
 
 @app.route("/health")
@@ -164,7 +165,7 @@ def login_user():
         return jsonify({"error": "Missing data"}), 400
 
     try:
-        user = Users.login_user(username, password, ip_address, combination_id, app.config['MAX_LOGIN_ATTEMPTS'])
+        user = Users.login_user(username, password, ip_address, combination_id, app.config['MAX_FAILED_LOGIN_ATTEMPTS'])
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -316,6 +317,7 @@ def get_document():
 
 
 @app.route('/get_all_document_names', methods=['POST'])
+@requires_authentication
 def get_all_document_names():
     try:
         password = request.form['password']
@@ -393,6 +395,94 @@ def change_password_post():
 
     try:
         Users.update_user_password(user_id, new_password, hashed_password, new_salt.slt_id)
+    except ValueError:
+        return jsonify({"error": "Password could not be changed"}), 400
+
+    return jsonify({"message": "Password changed successfully"}), 200
+
+
+@app.route('/password_recovery', methods=['GET'])
+def password_recovery():
+    return flask.render_template('password_recovery_form.html')
+
+
+@app.route('/password_recovery', methods=['POST'])
+def password_recovery_post():
+    time.sleep(app.config['PASSWORD_RECOVERY_TIMEOUT'])
+
+    try:
+        email = request.form['email']
+    except KeyError:
+        return jsonify({"error": "Missing data"}), 400
+
+    try:
+        code = PasswordRecoveryCodes.generate_new_unique_password_recovery_code_for_user(email)
+        PasswordRecoveryCodes.send_password_recovery_code(email, code, app.logger)
+    except ValueError:
+        return jsonify({"error": "Recovery code could not be send"}), 400
+
+    return jsonify({
+        "message": f"Recovery code send successfully to email {email}. "
+                   f"Code is active for {app.config['TIME_ALLOWED_FOR_PASSWORD_RECOVERY']} minute(s). "
+                   f"Normally you would have to get it from there, but hey, u seam like trustworthy user, so "
+                   f"just for u here it is: {flask.url_for('password_recovery_verify', password_recovery_code=code)}"}), 200
+
+
+@app.route('/password_recovery/verify/<password_recovery_code>', methods=['GET'])
+def password_recovery_verify(password_recovery_code: str):
+    try:
+        code_object = PasswordRecoveryCodes.get_password_recovery_code_by_code(password_recovery_code)
+    except ValueError:
+        return jsonify({"error": "Password recovery code not found"}), 400
+
+    if code_object is None:
+        return jsonify({"error": "Password recovery code not found"}), 400
+
+    if not PasswordRecoveryCodes.is_code_valid(code_object.code):
+        return jsonify({"error": "Password recovery code expired"}), 400
+
+    return flask.render_template('password_recovery_verify_form.html')
+
+
+@app.route('/password_recovery/verify/<password_recovery_code>', methods=['POST'])
+def password_recovery_verify_post(password_recovery_code: str):
+    time.sleep(app.config['PASSWORD_RECOVERY_TIMEOUT'])
+
+    try:
+        code_object = PasswordRecoveryCodes.get_password_recovery_code_by_code(password_recovery_code)
+    except ValueError:
+        return jsonify({"error": "Password recovery code not found"}), 400
+
+    if code_object is None:
+        return jsonify({"error": "Password recovery code not found"}), 400
+
+    if not PasswordRecoveryCodes.is_code_valid(code_object.code):
+        return jsonify({"error": "Password recovery code expired"}), 400
+
+    try:
+        new_password = request.form['new_password']
+        user_id = code_object.user_id
+    except KeyError:
+        return jsonify({"error": "Missing data"}), 400
+
+    new_password_hashed_with_old_salt = bcrypt.hashpw(new_password.encode("utf-8"),
+                                                      bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)).hex()
+    if new_password_hashed_with_old_salt == Users.get_user_by_login(user_id).us_hsh:
+        return jsonify({"error": "New password cannot be the same as old password"}), 400
+
+    password_strength_errors = check_password_strength(new_password)
+    if password_strength_errors:
+        return password_strength_errors, 400
+
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(new_password.encode("utf-8"), salt).hex()
+
+    new_salt = Salts(slt_vl=salt.hex())
+    new_salt.save_salt()
+
+    try:
+        Users.update_user_password(code_object.user_id, new_password, hashed_password, new_salt.slt_id)
+        code_object.delete_password_recovery_code()
     except ValueError:
         return jsonify({"error": "Password could not be changed"}), 400
 

@@ -1,5 +1,6 @@
 import datetime
 import random
+import secrets
 
 
 def generate_account_number() -> str:
@@ -140,3 +141,15 @@ def generate_random_consecutive_numbers(max_length, amount_of_nums_to_generate) 
         numbers.add(number)
 
     return sorted(list(numbers))
+
+
+def generate_random_password_recovery_code():
+    """
+    Generates a random password recovery code.
+
+    :return: Random password recovery code.
+    """
+    # TODO: Take value from config
+    PASSWORD_RECOVERY_CODE_LENGTH = 32
+
+    return secrets.token_hex(PASSWORD_RECOVERY_CODE_LENGTH)
