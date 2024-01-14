@@ -3,6 +3,7 @@ import os
 import time
 from datetime import datetime
 
+import PIL
 import bcrypt
 import flask
 from flask import Flask, session, redirect, url_for, request, jsonify
@@ -12,7 +13,7 @@ from config import Config
 from helpers.auth_wrapper import requires_authentication
 from helpers.file_content_checker import check_file_content_based_on_extension, get_file_extension
 from helpers.file_encrypter import encrypt_file_content_with_key, decrypt_file_content_with_key
-from helpers.generate_numbers import generate_random_consecutive_numbers, generate_card_data
+from helpers.generate_numbers import generate_card_data
 from helpers.password_checker import check_password_strength
 from helpers.string_ecrypter import encrypt_string_with_password
 from models import db
@@ -24,10 +25,12 @@ app.app_context().push()
 db.init_app(app)
 logger = app.logger
 
-from models import Users, Salts, UserCredentials, Transactions, LoginAttempts, CreditCards
+from models import Users, Salts, UserCredentials, Transactions, LoginAttempts, CreditCards, Documents
 
 with app.app_context():
     db.create_all()
+    PIL.Image.MAX_IMAGE_PIXELS = app.config['MAX_PIL_IMAGE_PIXELS']
+
 
 @app.route("/health")
 def health():
@@ -42,6 +45,10 @@ def unauthorized():
 def test():
     return flask.render_template("test.html")
 
+
+@app.route("/register", methods=["GET"])
+def register():
+    return flask.render_template("register.html")
 
 @app.route("/register", methods=["POST"])
 def register_user():
@@ -96,29 +103,11 @@ def register_user():
         salt_id=new_salt.slt_id)
 
     new_user.save_user()
-    generated_combinations = []
-    for _ in range(app.config['AMOUNT_OF_COMBINATIONS_GENERATED_FOR_PASSWORD']):
-        combination_of_password_letters = generate_random_consecutive_numbers(len(password),
-                                                                              app.config[
-                                                                                  'AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD'])
 
-        while combination_of_password_letters in generated_combinations:
-            combination_of_password_letters = generate_random_consecutive_numbers(len(password),
-                                                                                  app.config[
-                                                                                      'AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD'])
-
-        letters_in_password = "".join([password[i - 1] for i in combination_of_password_letters])
-        salt = bcrypt.gensalt()
-        hashed_password = bcrypt.hashpw(letters_in_password.encode("utf-8"), salt).hex()
-
-        new_salt = Salts(slt_vl=salt.hex())
-        new_salt.save_salt()
-
-        user_credentials = UserCredentials(usr_id=username,
-                                           pswd_ltrs_nmbrs=combination_of_password_letters,
-                                           hsh_val=hashed_password,
-                                           slt_id=new_salt.slt_id)
-        user_credentials.save_user_credentials()
+    UserCredentials.generate_new_password_combinations(password,
+                                                       new_user.us_lgn,
+                                                       app.config['AMOUNT_OF_COMBINATIONS_GENERATED_FOR_PASSWORD'],
+                                                       app.config['AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD'])
 
     return redirect(url_for('register_success', _method="GET"))
 
@@ -140,7 +129,6 @@ def register_success():
 
 @app.route("/logout", methods=["POST"])
 def logout_user():
-    session.pop("username", None)
     session.pop("user_id", None)
     session.pop("authenticated", None)
     return redirect(url_for("logout_success", _method="GET"))
@@ -158,6 +146,10 @@ def get_password_combination(user_id: str):
         "letters_combination": credentials.pswd_ltrs_nmbrs
     }), 200
 
+
+@app.route("/login", methods=["GET"])
+def login():
+    return flask.render_template("login.html")
 
 @app.route("/login", methods=["POST"])
 def login_user():
@@ -289,11 +281,14 @@ def send_document():
     if not password or not user_id:
         return jsonify({"error": "Unauthorized request"}), 401
 
-    passw = password.encode("utf-8")
-    hashed_password = bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)
+    errors = check_password_strength(password)
+    if errors:
+        return jsonify(errors), 400
 
-    if not bcrypt.checkpw(passw, hashed_password):
-        return jsonify({"error": "Wrong credentials"}), 401
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt).hex()
+    new_salt = Salts(slt_vl=salt.hex())
+    new_salt.save_salt()
 
     file_extension = get_file_extension(uploaded_file_name)
 
@@ -312,6 +307,15 @@ def send_document():
 
     with open(os.path.join(user_custom_path, uploaded_file_name + '.aes'), "wb") as f:
         f.write(file_encrypted)
+
+    document = Documents(own_id=user_id,
+                         dcm_ttl=uploaded_file_name,
+                         dcm_typ=file_extension,
+                         dcm_hsh=hashed_password,
+                         dcm_slt_id=new_salt.slt_id,
+                         dcm_ad_dt=datetime.utcnow())
+
+    document.save_document()
 
     return jsonify({"message": "File uploaded successfully"}), 200
 
@@ -337,8 +341,14 @@ def get_document():
     if not is_authenticated or not user_id:
         return jsonify({"error": "Unauthorized request"}), 401
 
+    document = Documents.get_document_for_user_by_filename(user_id, filename)
+
+    if document is None:
+        return jsonify({"error": "File not found"}), 400
+
+    filename = document.dcm_ttl
     passw = password.encode("utf-8")
-    hashed_password = bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)
+    hashed_password = bytes.fromhex(document.dcm_hsh)
 
     if not bcrypt.checkpw(passw, hashed_password):
         return jsonify({"error": "Wrong credentials"}), 401
@@ -390,3 +400,55 @@ def get_all_document_names():
         return jsonify({"error": "No files found"}), 400
 
     return jsonify(filenames), 200
+
+
+@app.route('/change_password', methods=['GET'])
+@requires_authentication
+def change_password():
+    return flask.render_template('change_password_form.html')
+
+
+@app.route('/change_password', methods=['POST'])
+@requires_authentication
+def change_password_post():
+    time.sleep(app.config['CHANGE_PASSWORD_TIMEOUT'])
+
+    try:
+        old_password = request.form['old_password']
+        new_password = request.form['new_password']
+    except KeyError:
+        return jsonify({"error": "Missing data"}), 400
+
+    user_id = session['user_id']
+    is_authenticated = session['authenticated']
+
+    if not is_authenticated or not user_id:
+        return jsonify({"error": "Unauthorized request"}), 401
+
+    passw = old_password.encode("utf-8")
+    hashed_password = bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)
+
+    if not bcrypt.checkpw(passw, hashed_password):
+        return jsonify({"error": "Wrong credentials"}), 401
+
+    new_password_hashed_with_old_salt = bcrypt.hashpw(new_password.encode("utf-8"),
+                                                      bytes.fromhex(Users.get_user_by_login(user_id).us_hsh)).hex()
+    if new_password_hashed_with_old_salt == Users.get_user_by_login(user_id).us_hsh:
+        return jsonify({"error": "New password cannot be the same as old password"}), 400
+
+    password_strength_errors = check_password_strength(new_password)
+    if password_strength_errors:
+        return password_strength_errors, 400
+
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(new_password.encode("utf-8"), salt).hex()
+
+    new_salt = Salts(slt_vl=salt.hex())
+    new_salt.save_salt()
+
+    try:
+        Users.update_user_password(user_id, new_password, hashed_password, new_salt.slt_id)
+    except ValueError:
+        return jsonify({"error": "Password could not be changed"}), 400
+
+    return jsonify({"message": "Password changed successfully"}), 200
