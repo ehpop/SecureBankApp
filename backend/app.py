@@ -159,30 +159,17 @@ def login_user():
         username = request.json["username"]
         password = request.json["password"]
         combination_id = request.json["combination_id"]
+        ip_address = request.remote_addr
     except KeyError:
         return jsonify({"error": "Missing data"}), 400
 
-    user = Users.get_user_by_login(username)
-    if user is None:
-        return jsonify({"error": "Wrong credentials"}), 401
+    try:
+        user = Users.login_user(username, password, ip_address, combination_id, app.config['MAX_LOGIN_ATTEMPTS'])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
-    login_attempt = LoginAttempts(username=username, ip_address=request.remote_addr, success=False)
-
-    if LoginAttempts.calculate_failed_login_attempts_in_period(username,
-                                                               request.remote_addr) >= app.config[
-        'MAX_FAILED_LOGIN_ATTEMPTS']:
-        login_attempt.save_login_attempt()
-        return jsonify({"error": "Too many login attempts"}), 429
-
-    if not UserCredentials.check_password_combination_for_id(combination_id, password):
-        login_attempt.save_login_attempt()
-        return jsonify({"error": "Wrong credentials"}), 401
-
-    session["user_id"] = username
+    session["user_id"] = user.us_lgn
     session["authenticated"] = True
-
-    login_attempt.success = True
-    login_attempt.save_login_attempt()
 
     return redirect(url_for("login_success", _method="GET")), 302
 

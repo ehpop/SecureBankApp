@@ -44,6 +44,14 @@ class Users(db.Model):
             "balance": "{self.us_blnc}"
         }}"""
 
+    def save_user(self):
+        db.session.add(self)
+        db.session.commit()
+
+    def remove_user(self):
+        db.session.delete(self)
+        db.session.commit()
+
     @staticmethod
     def get_user_by_login(login: str):
         return Users.query.where(Users.us_lgn == login).first()
@@ -100,13 +108,27 @@ class Users(db.Model):
     def generate_new_card_number():
         raise NotImplementedError
 
-    def save_user(self):
-        db.session.add(self)
-        db.session.commit()
+    @staticmethod
+    def login_user(username: str, password: str, ip_addr: str, combination_id: str, max_failed_login_attempts: int = 5):
+        user = Users.get_user_by_login(username)
+        if user is None:
+            raise ValueError("Wrong credentials")
 
-    def remove_user(self):
-        db.session.delete(self)
-        db.session.commit()
+        login_attempt = LoginAttempts(username=username, ip_address=ip_addr, success=False)
+
+        if LoginAttempts.calculate_failed_login_attempts_in_period(username,
+                                                                   ip_address) >= max_failed_login_attempts:
+            login_attempt.save_login_attempt()
+            raise ValueError("Too many failed login attempts")
+
+        if not UserCredentials.check_password_combination_for_id(combination_id, password):
+            login_attempt.save_login_attempt()
+            raise ValueError("Wrong credentials")
+
+        login_attempt.success = True
+        login_attempt.save_login_attempt()
+
+        return user
 
 
 class UserCredentials(db.Model):
@@ -424,6 +446,7 @@ class Transactions(db.Model):
 
         from_account.save_user()
         to_account.save_user()
+
 
 class Documents(db.Model):
     dcm_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
