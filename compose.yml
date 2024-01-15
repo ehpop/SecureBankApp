@@ -2,7 +2,21 @@ version: '3.8'
 
 services:
 
-  bank_backend:
+  nginx:
+    build: nginx
+    container_name: nginx
+    expose:
+      - 80
+    ports:
+      - '80:80'
+      - '443:443'
+    depends_on:
+      flask:
+        condition: service_healthy
+    networks:
+      - network
+
+  flask:
     build: backend
     restart: always
     container_name: flask
