@@ -11,5 +11,6 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 ENV FLASK_APP=app
 
-CMD ["python", "run.py"]
-#CMD ["gunicorn", "--bind", "0.0.0.0:80", "backend:create_app()"]
+EXPOSE 9000
+
+CMD ["gunicorn", "-b", "0.0.0.0:9000", "wsgi:app"]
