@@ -1,7 +1,7 @@
-import pyAesCrypt
-import Crypto
 import base64
 import io
+
+import pyAesCrypt
 from Crypto.Protocol.KDF import PBKDF2
 
 
@@ -15,7 +15,7 @@ def get_secure_key_from_password(password, salt) -> str:
     return base64.b64encode(PBKDF2(password, salt, dkLen=32)).decode("utf-8")
 
 
-def encrypt_file_content_with_key(file_content: bytes, password, salt) -> bytes:
+def encrypt_bytes_with_password_and_salt(file_content: bytes, password, salt) -> bytes:
     """
     Encrypts a file content with a password and salt.
     :param file_content: File content to be encrypted (bytes)
@@ -31,7 +31,7 @@ def encrypt_file_content_with_key(file_content: bytes, password, salt) -> bytes:
     return output_stream.getvalue()
 
 
-def decrypt_file_content_with_key(file_content: bytes, password, salt) -> bytes:
+def decrypt_bytes_with_password_and_salt(file_content: bytes, password, salt) -> bytes:
     """
     Decrypts a file content with a password and salt.
     :param file_content: File content to be decrypted (bytes)

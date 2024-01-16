@@ -2,8 +2,9 @@ import os
 from datetime import timedelta
 
 class Config:
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL")
-    SECRET_KEY = os.environ.get("FLASK_SECRET_KEY")
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL",
+                                             "postgresql://database_admin:b8d0e9de879f42b9c7f88b0151bc3e182806b6d5be3e8ed448ca518c558e2d0e@localhost:5432/bank_prod_db")
+    SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "very secret key")
 
     # Cookie session config
     PERMANENT_SESSION_LIFETIME = timedelta(hours=1)

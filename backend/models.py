@@ -4,16 +4,16 @@ import secrets
 from datetime import datetime, timedelta
 
 import bcrypt
+from flask import current_app
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 
 from helpers.file_content_checker import check_file_content_based_on_extension, get_file_extension
-from helpers.file_encrypter import encrypt_file_content_with_key, decrypt_file_content_with_key
+from helpers.file_encrypter import encrypt_bytes_with_password_and_salt, decrypt_bytes_with_password_and_salt
 from helpers.generate_numbers import generate_account_number, generate_random_consecutive_numbers, \
     generate_random_password_recovery_code
 from helpers.generate_numbers import generate_card_data
 from helpers.password_checker import check_password_strength
-from helpers.string_ecrypter import encrypt_string_with_password
 
 db = SQLAlchemy()
 
@@ -277,6 +277,16 @@ class UserCredentials(db.Model):
         return random_credentials
 
     @staticmethod
+    def get_fake_credentials():
+        user_id = "fake_user"
+        combinations = set()
+        max_password_length = 16
+        while len(combinations) < current_app.config['AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD']:
+            combinations.add(secrets.randbelow(max_password_length) + 1)
+
+        return user_id, list(sorted(combinations))
+
+    @staticmethod
     def is_password_combination_active(combination_id: str) -> bool:
         """
         Checks if the password combination is active. Meaning that it was activated less than
@@ -298,22 +308,23 @@ class UserCredentials(db.Model):
     def parse_list_of_numbers_from_string(string: str) -> list[int]:
         return [int(number) for number in string.lstrip("{").rstrip("}").split(",")]
 
-    # TODO: make this depend on app context config
     @staticmethod
-    def generate_new_password_combinations(plain_password: str, username: str, amount_of_combinations=10,
-                                           amount_of_chars_in_combination=6):
+    def generate_new_password_combinations(plain_password: str, username: str):
         if Users.get_user_by_login(username) is None:
             raise ValueError(f"User with login {username} does not exist")
 
         generated_combinations = []
-        max_amount_of_combinations = min(math.factorial(len(plain_password)), amount_of_combinations)
+        max_amount_of_combinations = min(math.factorial(len(plain_password)),
+                                         current_app.config['AMOUNT_OF_COMBINATIONS_GENERATED_FOR_PASSWORD'])
         for _ in range(max_amount_of_combinations):
             combination_of_password_letters = generate_random_consecutive_numbers(len(plain_password),
-                                                                                  amount_of_chars_in_combination)
+                                                                                  current_app.config[
+                                                                                      'AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD'])
 
             while combination_of_password_letters in generated_combinations:
                 combination_of_password_letters = generate_random_consecutive_numbers(len(plain_password),
-                                                                                      amount_of_chars_in_combination)
+                                                                                      current_app.config[
+                                                                                          'AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD'])
 
             letters_in_password = "".join([plain_password[i - 1] for i in combination_of_password_letters])
             salt = bcrypt.gensalt()
@@ -594,7 +605,7 @@ class Documents(db.Model):
                 os.makedirs(user_custom_path)
 
             salt = bytes.fromhex(Salts.get_salt_by_id(Users.get_user_by_login(user_id).salt_id).slt_vl)
-            file_encrypted = encrypt_file_content_with_key(uploaded_file_content, password, salt)
+            file_encrypted = encrypt_bytes_with_password_and_salt(uploaded_file_content, password, salt)
 
             with open(os.path.join(user_custom_path, uploaded_file_name + '.aes'), "wb") as f:
                 f.write(file_encrypted)
@@ -646,7 +657,7 @@ class Documents(db.Model):
             raise ValueError("File is empty")
 
         salt = bytes.fromhex(Salts.get_salt_by_id(Users.get_user_by_login(user_id).salt_id).slt_vl)
-        decrypted_data = decrypt_file_content_with_key(content, password, salt)
+        decrypted_data = decrypt_bytes_with_password_and_salt(content, password, salt)
 
         return decrypted_data
 
@@ -826,7 +837,8 @@ class CreditCards(db.Model):
 
     @staticmethod
     def get_credit_card_by_owner(card_owner: str):
-        return CreditCards.query.where(CreditCards.owner_id == card_owner).first()
+        card_id = Users.get_user_by_login(card_owner).us_crd_nb_id
+        return CreditCards.query.where(CreditCards.crd_id == card_id).first()
 
     @staticmethod
     def get_credit_card_by_number(card_number: str):
@@ -836,18 +848,44 @@ class CreditCards(db.Model):
     def generate_new_encrypted_credit_card_with_password_and_salt(password, salt, salt_id):
         new_card_details, hidden_card_details = generate_card_data()
 
+        card_number_bytes = new_card_details['card_number'].encode("utf-8")
+        cvc_bytes = new_card_details['cvc'].encode("utf-8")
+        expiry_date_bytes = new_card_details['expiry_date'].encode("utf-8")
+
         credit_card = CreditCards(crd_nb_hidden=hidden_card_details['card_number'],
                                   crd_cvc_hidden=hidden_card_details['cvc'],
                                   crd_exp_dt_hidden=hidden_card_details['expiry_date'],
-                                  crd_nb=encrypt_string_with_password(new_card_details['card_number'], password, salt),
-                                  crd_cvc=encrypt_string_with_password(new_card_details['cvc'], password, salt),
-                                  crd_exp_dt=encrypt_string_with_password(new_card_details['expiry_date'], password,
-                                                                          salt),
+                                  crd_nb=encrypt_bytes_with_password_and_salt(card_number_bytes
+                                                                              , password, salt.slt_vl).hex(),
+                                  crd_cvc=encrypt_bytes_with_password_and_salt(cvc_bytes,
+                                                                               password, salt.slt_vl).hex(),
+                                  crd_exp_dt=encrypt_bytes_with_password_and_salt(expiry_date_bytes
+                                                                                  , password,
+                                                                                  salt.slt_vl).hex(),
                                   slt_id=salt_id)
 
         credit_card.save_credit_card()
 
         return credit_card
+
+    @staticmethod
+    def get_decrypted_credit_card_for_user(user_id: str, password: str):
+        credit_card = CreditCards.get_credit_card_by_owner(user_id)
+
+        if credit_card is None:
+            raise ValueError(f"Card for user {user_id} does not exist")
+
+        salt = Salts.get_salt_by_id(credit_card.slt_id)
+
+        card_number = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_nb), password, salt.slt_vl)
+        cvc = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_cvc), password, salt.slt_vl)
+        expiry_date = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_exp_dt), password, salt.slt_vl)
+
+        return {
+            "card_number": card_number.decode("utf-8"),
+            "cvc": cvc.decode("utf-8"),
+            "expiry_date": expiry_date.decode("utf-8")
+        }
 
 
 class PasswordRecoveryCodes(db.Model):
@@ -960,7 +998,7 @@ class PasswordRecoveryCodes(db.Model):
             minutes=PasswordRecoveryCodes.TIME_ALLOWED_FOR_PASSWORD_RECOVERY)
 
     @staticmethod
-    def send_password_recovery_code(user_email, code, logger):
+    def send_password_recovery_code(user_email, code):
         """
         Sends password recovery code to the user.
         :param user_email: email of the user
@@ -972,4 +1010,4 @@ class PasswordRecoveryCodes(db.Model):
         if user is None:
             raise ValueError(f"User with email {user_email} does not exist")
 
-        logger.info(f"Sending password recovery code {code} to email: {user_email}")
+        current_app.logger.info(f"Sending password recovery code {code} to email: {user_email}")
