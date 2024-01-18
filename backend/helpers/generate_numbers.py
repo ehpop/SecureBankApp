@@ -7,12 +7,13 @@ def generate_account_number() -> str:
     """
     Generates a random Polish IBAN number.
     PL IBAN format: PLXX XXXX XXXX XXXX XXXX XXXX XXXX
-    'PL' (2 characters) + 24 digits
+    'PL' (2 characters) + 26 digits
 
     :returns: generated account number unique to the database
     """
-
-    pl_iban = 'PL' + ''.join(str(random.randint(0, 9)) for _ in range(24))
+    iban_prefix = 'PL'
+    iban_numbers_length = 26
+    pl_iban = iban_prefix + ''.join(str(random.randint(0, 9)) for _ in range(iban_numbers_length))
 
     return pl_iban
 
@@ -28,13 +29,13 @@ def generate_card_data() -> (dict, dict):
     expiry_date, hidden_expiry_date = _generate_expiry_date()
 
     card_dict = {
-        'card_number': card_number,
+        'number': card_number,
         'cvc': cvc,
         'expiry_date': expiry_date
     }
 
     hidden_card_dict = {
-        'card_number': hidden_card_number,
+        'number': hidden_card_number,
         'cvc': hidden_cvc,
         'expiry_date': hidden_expiry_date
     }
@@ -107,12 +108,11 @@ def _generate_expiry_date() -> (str, str):
     Generates expiry date for a card.
     :return: Expiry date in format MM/YY, hidden expiry date in format **/**
     """
-
-    CARD_EXPIRY_YEARS = 3
-    CURRENT_MILLENIUM = 2000
+    card_expiry_years = 3
+    current_millenium = 2000  # TODO: Change in 2100
 
     month = datetime.datetime.now().month
-    year = datetime.datetime.now().year - CURRENT_MILLENIUM + CARD_EXPIRY_YEARS
+    year = datetime.datetime.now().year - current_millenium + card_expiry_years
 
     padded_month = f'0{month}' if month < 10 else f'{month}'
     padded_year = f'0{year}' if year < 10 else f'{year}'
