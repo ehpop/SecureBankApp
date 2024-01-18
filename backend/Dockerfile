@@ -12,5 +12,3 @@ RUN pip install --no-cache-dir --upgrade pip \
 ENV FLASK_APP=app
 
 EXPOSE 9000
-
-CMD ["gunicorn", "-b", "0.0.0.0:9000", "wsgi:app"]

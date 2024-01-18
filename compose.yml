@@ -20,7 +20,7 @@ services:
     build: backend
     restart: always
     container_name: flask
-    command: gunicorn -b 0.0.0.0:9000 wsgi:app
+    command: python wsgi.py
     environment:
       - DATABASE_URL=postgresql://${DATABASE_USERNAME}:${DATABASE_PASSWORD}@bank_db_container:5432/${DATABASE_NAME}
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
