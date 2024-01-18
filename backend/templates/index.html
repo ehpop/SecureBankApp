@@ -1,12 +1,36 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Title</title>
-</head>
-<body>
-<h1 class="bottom">
-    Hi {{session.username}}!!</br></br> Welcome to the index page...
-</h1>
-</body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+
+<div class="shadow-lg p-3 mb-5 bg-body-tertiary rounded container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+
+            {% if current_user and current_user.is_authenticated %}
+            <h1 class="mb-4">Welcome, {{ current_user.us_nme }}</h1>
+
+            <p>Email: {{ current_user.us_email }}</p>
+            <p>Account Number: {{ current_user.us_act_nb }}</p>
+            <h5 class="green">Balance: {{ current_user.us_blnc }}</h5>
+
+            <!-- Display credit card details if available -->
+            {% if card_data %}
+            <h2 class="mt-4">Credit Card Details</h2>
+            <p>Card Number: {{ card_data["number"] }}</p>
+            <p>Expiration Date: {{ card_data["expiry_date"] }}</p>
+            <p>CVV: {{ card_data["cvc"] }}</p>
+            <a href="{{ url_for('access_card_details') }}" class="btn btn-primary">See card details</a>
+            {% else %}
+            <p>No credit card details available.</p>
+            {% endif %}
+
+            {% else %}
+            <h1 class="mb-4">Welcome to Secure Bank App</h1>
+            <p><a href="{{url_for('login')}}">Log in</a> to access your account information</p>
+            <p>or <a href="{{url_for('register')}}">create a free account</a></p>
+            {% endif %}
+
+        </div>
+    </div>
+</div>
+
+{% endblock %}
