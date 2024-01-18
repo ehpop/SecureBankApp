@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 import bcrypt
 from flask import current_app
+from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 
@@ -18,7 +19,7 @@ from helpers.password_checker import check_password_strength
 db = SQLAlchemy()
 
 
-class Users(db.Model):
+class Users(db.Model, UserMixin):
     us_lgn = db.Column(db.String, primary_key=True)
     us_email = db.Column(db.String, unique=True, nullable=False)
     us_nme = db.Column(db.String, nullable=False)
@@ -27,6 +28,9 @@ class Users(db.Model):
     us_blnc = db.Column(db.Integer, nullable=False)
     salt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
     us_crd_nb_id = db.Column(db.Integer, db.ForeignKey("credit_cards.crd_id"))
+
+    def get_id(self):
+        return self.us_lgn
 
     def __repr__(self):
         return f"<User {self.us_lgn}>"
@@ -82,6 +86,10 @@ class Users(db.Model):
     @staticmethod
     def is_login_taken(login: str):
         return Users.query.where(Users.us_lgn == login).count() > 0
+
+    @staticmethod
+    def is_email_taken(email: str):
+        return Users.query.where(Users.us_email == email).count() > 0
 
     @staticmethod
     def is_account_number_taken(account_number: str):
@@ -148,9 +156,9 @@ class Users(db.Model):
         raise NotImplementedError
 
     @staticmethod
-    def login_user(username: str, password: str, ip_address: str, combination_id: str,
-                   max_failed_login_attempts: int = 5):
+    def login_user(username: str, password: str, ip_address: str, combination_id: str):
         user = Users.get_user_by_login(username)
+        max_failed_login_attempts = current_app.config['MAX_FAILED_LOGIN_ATTEMPTS']
         if user is None:
             raise ValueError("Wrong credentials")
 
@@ -159,7 +167,8 @@ class Users(db.Model):
         if LoginAttempts.calculate_failed_login_attempts_in_period(username,
                                                                    ip_address) >= max_failed_login_attempts:
             login_attempt.save_login_attempt()
-            raise ValueError("Too many failed login attempts")
+            raise ValueError(
+                f"Too many failed login attempts. Try again in {current_app.config['FAILED_LOGIN_ATTEMPTS_LOCKOUT_TIME']} minutes.")
 
         if not UserCredentials.check_password_combination_for_id(combination_id, password):
             login_attempt.save_login_attempt()
@@ -169,6 +178,53 @@ class Users(db.Model):
         login_attempt.save_login_attempt()
 
         return user
+
+    @staticmethod
+    def register_user(username: str, email: str, password: str, name: str, lastname: str, repeat_password: str):
+        if password != repeat_password:
+            raise ValueError("Passwords do not match")
+
+        password_strength_errors = check_password_strength(password)
+        if password_strength_errors:
+            raise Users.PasswordErrorsException(password_strength_errors)
+
+        if Users.is_login_taken(username):
+            raise ValueError("Login already taken")
+
+        if Users.is_email_taken(email):
+            raise ValueError("Email already taken")
+
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt).hex()
+
+        new_salt = Salts(slt_vl=salt.hex())
+        new_salt.save_salt()
+
+        credit_card = CreditCards.generate_new_encrypted_credit_card_with_password_and_salt(password,
+                                                                                            new_salt.slt_vl,
+                                                                                            new_salt.slt_id)
+
+        new_user = Users()
+        new_user.us_lgn = username
+        new_user.us_email = email
+        new_user.us_nme = f"{name} {lastname}"
+        new_user.us_hsh = hashed_password
+        new_user.us_act_nb = Users.generate_new_account_number()
+        new_user.us_blnc = current_app.config['DEFAULT_USER_BALANCE']
+        new_user.salt_id = new_salt.slt_id
+        new_user.us_crd_nb_id = credit_card.crd_id
+
+        new_user.save_user()
+
+        UserCredentials.generate_new_password_combinations(password,
+                                                           new_user.us_lgn)
+
+        return new_user
+
+    class PasswordErrorsException(Exception):
+        def __init__(self, error_list):
+            self.error_list = error_list
+            super().__init__(f"Password errors: {error_list}")
 
 
 class UserCredentials(db.Model):
@@ -280,9 +336,9 @@ class UserCredentials(db.Model):
     def get_fake_credentials():
         user_id = "fake_user"
         combinations = set()
-        max_password_length = 16
+        max_password_length = current_app.config['MAX_PASSWORD_LENGTH']
         while len(combinations) < current_app.config['AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD']:
-            combinations.add(secrets.randbelow(max_password_length) + 1)
+            combinations.add(1 + secrets.randbelow(max_password_length + 1))
 
         return user_id, list(sorted(combinations))
 
@@ -471,13 +527,15 @@ class Transactions(db.Model):
         return Transactions.query.where(Transactions.act_frm == user.us_act_nb).all()
 
     @staticmethod
-    def make_transaction(from_account_number: str, to_account_number: str, amount: int, title="Transfer title",
+    def make_transaction(from_account_number: str, to_account_number: str, amount: int, password: str,
+                         title="Transfer title",
                          transfer_date=datetime.utcnow()):
         """
         Makes a transaction from one account to another.
         :param from_account_number: Account number from which the transaction should be made
         :param to_account_number: Account number to which the transaction should be made
         :param amount: Amount of money to transfer
+        :param password: Password of the user that is making the transaction
         :param title: Title of the transaction
         :param transfer_date: Date of the transaction
         :raises ValueError: If the account from which the transaction should be made does not exist
@@ -485,27 +543,30 @@ class Transactions(db.Model):
         :raises ValueError: If there is not enough money on the account from which the transaction should be made
         """
 
-        from_account = Users.get_user_by_account(from_account_number)
-        to_account = Users.get_user_by_account(to_account_number)
+        issuer = Users.get_user_by_account(from_account_number)
+        receiver = Users.get_user_by_account(to_account_number)
 
-        if from_account is None:
+        if not Users.check_password_for_user(issuer.us_lgn, password):
+            raise ValueError("Wrong credentials")
+
+        if issuer is None:
             raise ValueError("Account from which you want to make transaction does not exist")
 
-        if to_account is None:
+        if receiver is None:
             raise ValueError("Account to which you want to make transaction does not exist")
 
-        if from_account.us_blnc < amount:
+        if issuer.us_blnc < amount:
             raise ValueError("Not enough money on the account")
 
-        from_account.us_blnc -= amount
-        to_account.us_blnc += amount
+        issuer.us_blnc -= amount
+        receiver.us_blnc += amount
 
         transaction = Transactions(act_frm=from_account_number, act_to=to_account_number, trns_amt=amount,
                                    trns_ttl=title, trns_dt=transfer_date)
         transaction.save_transaction()
 
-        from_account.save_user()
-        to_account.save_user()
+        issuer.save_user()
+        receiver.save_user()
 
 
 class Documents(db.Model):
@@ -610,7 +671,8 @@ class Documents(db.Model):
             with open(os.path.join(user_custom_path, uploaded_file_name + '.aes'), "wb") as f:
                 f.write(file_encrypted)
 
-        except Exception:
+        except Exception as e:
+            current_app.logger.info(e)
             raise ValueError(f"Error occurred while encrypting file.")
 
         document = Documents(own_id=user_id,
@@ -718,15 +780,14 @@ class LoginAttempts(db.Model):
         db.session.commit()
 
     @staticmethod
-    def calculate_failed_login_attempts_in_period(username: str, ip_address: str, period_of_time=10) -> int:
+    def calculate_failed_login_attempts_in_period(username: str, ip_address: str) -> int:
         """
         Calculates the amount of failed login attempts in a given period of time.
         :param username: username of the user that is trying to log in
         :param ip_address: ip address of the user that is trying to log in
-        :param period_of_time: period of time in minutes, default is 10
         :return: amount of failed login attempts in a given period of time
         """
-
+        period_of_time = current_app.config['FAILED_LOGIN_ATTEMPTS_LOCKOUT_TIME']
         all_login_attempts_for_user_and_ip = (LoginAttempts.query
                                               .where(LoginAttempts.username == username)
                                               .where(LoginAttempts.ip_address == ip_address)
@@ -762,9 +823,13 @@ class LoginAttempts(db.Model):
         :param username: username of the user
         :return: list of login attempts
         """
-        return [{"ip_address": login_attempt.ip_address, "timestamp": login_attempt.timestamp,
+        datetime.utcnow().time()
+        return [{"ip_address": login_attempt.ip_address,
+                 "date": login_attempt.timestamp.date(),
+                 "time": login_attempt.timestamp.strftime('%H:%M:%S'),
                  "success": login_attempt.success} for login_attempt in
-                LoginAttempts.query.where(LoginAttempts.username == username).all()]
+                LoginAttempts.query.where(LoginAttempts.username == username).order_by(
+                    LoginAttempts.timestamp.desc()).all()]
 
     @staticmethod
     def get_all_failed_login_attempts_for_user(username: str) -> list[dict]:
@@ -845,23 +910,23 @@ class CreditCards(db.Model):
         return CreditCards.query.where(CreditCards.crd_nb == card_number).first()
 
     @staticmethod
-    def generate_new_encrypted_credit_card_with_password_and_salt(password, salt, salt_id):
+    def generate_new_encrypted_credit_card_with_password_and_salt(password, salt_val, salt_id):
         new_card_details, hidden_card_details = generate_card_data()
 
-        card_number_bytes = new_card_details['card_number'].encode("utf-8")
+        card_number_bytes = new_card_details['number'].encode("utf-8")
         cvc_bytes = new_card_details['cvc'].encode("utf-8")
         expiry_date_bytes = new_card_details['expiry_date'].encode("utf-8")
 
-        credit_card = CreditCards(crd_nb_hidden=hidden_card_details['card_number'],
+        credit_card = CreditCards(crd_nb_hidden=hidden_card_details['number'],
                                   crd_cvc_hidden=hidden_card_details['cvc'],
                                   crd_exp_dt_hidden=hidden_card_details['expiry_date'],
                                   crd_nb=encrypt_bytes_with_password_and_salt(card_number_bytes
-                                                                              , password, salt.slt_vl).hex(),
+                                                                              , password, salt_val).hex(),
                                   crd_cvc=encrypt_bytes_with_password_and_salt(cvc_bytes,
-                                                                               password, salt.slt_vl).hex(),
+                                                                               password, salt_val).hex(),
                                   crd_exp_dt=encrypt_bytes_with_password_and_salt(expiry_date_bytes
                                                                                   , password,
-                                                                                  salt.slt_vl).hex(),
+                                                                                  salt_val).hex(),
                                   slt_id=salt_id)
 
         credit_card.save_credit_card()
@@ -882,7 +947,7 @@ class CreditCards(db.Model):
         expiry_date = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_exp_dt), password, salt.slt_vl)
 
         return {
-            "card_number": card_number.decode("utf-8"),
+            "number": card_number.decode("utf-8"),
             "cvc": cvc.decode("utf-8"),
             "expiry_date": expiry_date.decode("utf-8")
         }
@@ -1003,7 +1068,6 @@ class PasswordRecoveryCodes(db.Model):
         Sends password recovery code to the user.
         :param user_email: email of the user
         :param code: password recovery code
-        :param logger: logger object, used temporary instead of actual email sending
         :raises ValueError: If the user does not exist
         """
         user = Users.get_user_by_email(user_email)
