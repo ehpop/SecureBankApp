@@ -7,16 +7,16 @@ from PIL.Image import Image
 from flask import Flask, session, redirect, url_for, request, jsonify, flash
 
 from config import Config
-from helpers.password_checker import check_password_strength
 from models import db
-from views_helper import check_if_password_is_same_as_previous, hash_new_password_with_new_salt, \
-    check_if_user_provided_correct_password, verify_provided_password_recovery_code
 
 app = Flask(__name__)
 app.config.from_object(Config)
 app.app_context().push()
 
 db.init_app(app)
+
+from views_helper import check_if_password_is_same_as_previous, hash_new_password_with_new_salt, \
+    check_if_user_provided_correct_password, verify_provided_password_recovery_code
 
 from models import Users, UserCredentials, Transactions, LoginAttempts, CreditCards, Documents, \
     PasswordRecoveryCodes
@@ -29,6 +29,7 @@ from forms.access_document_form import AccessDocumentForm
 from forms.change_password_form import ChangePasswordForm
 from forms.password_recovery_form import PasswordRecoveryCodeForm
 from forms.set_new_password_form import SetNewPasswordForm
+from helpers.password_checker import check_password_strength
 from flask_login import LoginManager, login_user, login_required, logout_user
 
 with app.app_context():

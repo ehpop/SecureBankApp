@@ -9,14 +9,13 @@ from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 
+db = SQLAlchemy()
+
 from helpers.file_content_checker import check_file_content_based_on_extension, get_file_extension
 from helpers.file_encrypter import encrypt_bytes_with_password_and_salt, decrypt_bytes_with_password_and_salt
 from helpers.generate_numbers import generate_account_number, generate_random_consecutive_numbers, \
     generate_random_password_recovery_code
 from helpers.generate_numbers import generate_card_data
-from helpers.password_checker import check_password_strength
-
-db = SQLAlchemy()
 
 
 class Users(db.Model, UserMixin):
@@ -181,12 +180,13 @@ class Users(db.Model, UserMixin):
 
     @staticmethod
     def register_user(username: str, email: str, password: str, name: str, lastname: str, repeat_password: str):
+        from helpers.password_checker import check_password_strength
         if password != repeat_password:
             raise ValueError("Passwords do not match")
 
-        password_strength_errors = check_password_strength(password)
-        if password_strength_errors:
-            raise Users.PasswordErrorsException(password_strength_errors)
+        errors = check_password_strength(password)
+        if errors:
+            raise Users.PasswordErrorsException(errors)
 
         if Users.is_login_taken(username):
             raise ValueError("Login already taken")
@@ -643,6 +643,7 @@ class Documents(db.Model):
         if not password or not user_id:
             raise ValueError("Unauthorized request")
 
+        from helpers.password_checker import check_password_strength
         errors = check_password_strength(password)
         if errors:
             raise ValueError(errors)
