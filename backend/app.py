@@ -224,7 +224,7 @@ def send_document():
             flash(str(e))
             return flask.render_template("documents/send_document.html", form=form,
                                          allowed_extensions=app.config['UPLOAD_EXTENSIONS'])
-        except Exception as e:
+        except Exception:
             flash("Something went wrong")
             return flask.render_template("documents/send_document.html", form=form,
                                          allowed_extensions=app.config['UPLOAD_EXTENSIONS'])

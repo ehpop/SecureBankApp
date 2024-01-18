@@ -2,6 +2,8 @@ import datetime
 import random
 import secrets
 
+from flask import current_app
+
 
 def generate_account_number() -> str:
     """
@@ -149,7 +151,4 @@ def generate_random_password_recovery_code():
 
     :return: Random password recovery code.
     """
-    # TODO: Take value from config
-    PASSWORD_RECOVERY_CODE_LENGTH = 32
-
-    return secrets.token_hex(PASSWORD_RECOVERY_CODE_LENGTH)
+    return secrets.token_hex(current_app.config['PASSWORD_RECOVERY_CODE_LENGTH'])

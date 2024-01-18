@@ -29,7 +29,7 @@ def check_image_content(bytes_stream: IO ) -> bool:
     try:
         Image.open(bytes_stream)
     except PIL.Image.DecompressionBombWarning:
-        # TODO: Added error handling for decompression bomb warning
+        # TODO: Add error handling for decompression bomb warning
         # f'Image is too large, max amount of pixels is {PIL.Image.MAX_IMAGE_PIXELS} pixels'
         return False
     except:
@@ -54,7 +54,7 @@ def check_file_content_based_on_extension(file_content: IO[bytes], file_extensio
 def get_file_extension(filename: str) -> str:
     """
     Get the file extension from a filename
-    :param filename: filename
+    :param filename
     :return: file extension
     """
     return '.' + filename.rsplit('.', 1)[1].lower()
