@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="shadow-lg p-3 mb-5 bg-body-tertiary rounded container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="row justify-content-center">
+                <div class="col-md-10 text-center">
+                    <h1>Transaction Details</h1>
+
+                    <h2>Incoming Transactions</h2>
+                    {% if incoming %}
+                    <table class="table table-bordered">
+                        <thead>
+                        <tr>
+                            <th>IBAN</th>
+                            <th>Amount</th>
+                            <th>Date</th>
+                            <th>Description</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for transaction in incoming %}
+                        <tr>
+                            <td>{{ transaction.act_to }}</td>
+                            <td>{{ transaction.trns_amt }}</td>
+                            <td>{{ transaction.trns_dt }}</td>
+                            <td>{{ transaction.trns_ttl }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p>No incoming transactions.</p>
+                    {% endif %}
+
+                    {% if outgoing %}
+                    <h2>Outgoing Transactions</h2>
+                    <table class="table table-bordered">
+                        <thead>
+                        <tr>
+                            <th>IBAN</th>
+                            <th>Amount</th>
+                            <th>Date</th>
+                            <th>Description</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for transaction in outgoing %}
+                        <tr>
+                            <td>{{ transaction.act_to }}</td>
+                            <td>{{ transaction.trns_amt }}</td>
+                            <td>{{ transaction.trns_dt }}</td>
+                            <td>{{ transaction.trns_ttl }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p>No outgoing transactions.</p>
+                    {% endif %}
+                    <!--                    Button for adding new transactions-->
+                    <div class="mb-3">
+                        <div class="row justify-content-center">
+                            <div class="col-md-6 text-center">
+                                <a href="{{ url_for('transfer_money') }}" class="btn btn-primary">Add Transaction</a>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

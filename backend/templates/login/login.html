@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+
+<form method="POST" class="shadow-lg p-3 mb-5 bg-body-tertiary rounded container-fluid">
+    {{ form.hidden_tag() }}
+    <div class="row justify-content-center">
+        <div class="col-md-4">
+            <div class="row justify-content-center">
+                <div class="col-md-6 text-center">
+                    <h1>Login</h1>
+                </div>
+            </div>
+            <div class="mb-3">
+                {{ form.username.label(class="form-label") }}<br>
+                {{ form.username(size=32, class="form-control") }}
+            </div>
+            <div class="mb-3">
+                <p><a href="{{ url_for('password_recovery') }}">Forgot password?</a></p>
+            </div>
+            <div class="mb-3">
+                <div class="row justify-content-center">
+                    <div class="col-md-6 text-center">
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% endblock %}

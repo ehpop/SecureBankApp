@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="shadow-lg p-3 mb-5 bg-body-tertiary rounded container">
+    <h1>Login Attempts</h1>
+
+    {% if login_attempts %}
+    <table class="table table-bordered">
+        <thead>
+        <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>IP Address</th>
+            <th>Status</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for attempt in login_attempts %}
+        {% if not attempt.success %}
+        <tr class="table-danger">
+            <td>{{ attempt.date }}</td>
+            <td>{{ attempt.time }}</td>
+            <td>{{ attempt.ip_address }}</td>
+            <td>{% if attempt.success %}<span class="text-success">Success</span>{% else %}<span class="text-danger">Failed</span>{%
+                endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td>{{ attempt.date }}</td>
+            <td>{{ attempt.time }}</td>
+            <td>{{ attempt.ip_address }}</td>
+            <td>{% if attempt.success %}<span class="text-success">Success</span>{% else %}<span class="text-danger">Failed</span>{%
+                endif %}
+            </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No login attempts recorded.</p>
+    {% endif %}
+
+</div>
+
+{% endblock %}

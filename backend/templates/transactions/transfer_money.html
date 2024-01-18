@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="shadow-lg p-3 mb-5 bg-body-tertiary rounded container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="row justify-content-center">
+                <div class="col-md-6 text-center">
+                    <h1>Transfer Money</h1>
+                </div>
+            </div>
+            <div class="row justify-content-center">
+                <div class="col-md-4">
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        <div class="mb-3">
+                            {{ form.transfer_title.label(class="form-label") }}<br>
+                            {{ form.transfer_title(size=32, class="form-control") }}
+                        </div>
+                        <div class="mb-3">
+                            {{ form.amount.label(class="form-label") }}<br>
+                            {{ form.amount(size=32, class="form-control") }}
+                        </div>
+                        <div class="mb-3">
+                            {{ form.account_to_transfer.label(class="form-label") }}<br>
+                            {{ form.account_to_transfer(size=32, class="form-control") }}
+                        </div>
+                        <div class="mb-3">
+                            {{ form.password.label(class="form-label") }}<br>
+                            {{ form.password(size=32, class="form-control") }}
+                        </div>
+                        <div class="mb-3">
+                            <div class="row justify-content-center">
+                                <div class="col-md-6 text-center">
+                                    {{ form.submit(class="btn btn-primary") }}
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

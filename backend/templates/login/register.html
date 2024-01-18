@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<form method="POST">
+    {{ form.hidden_tag() }}
+    <div class="shadow-lg p-3 mb-5 bg-body-tertiary rounded container-fluid">
+        <div class="row justify-content-center">
+            <div class="col-md-4">
+                <div class="row justify-content-center">
+                    <div class="col-md-6 text-center">
+                        <h1>Register</h1>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    {{ form.username.label(class="form-label") }}
+                    {{ form.username(size=32, class="form-control") }}
+                </div>
+                <div class="mb-3">
+                    {{form.name.label(class="form-label")}}
+                    {{form.name(size=32, class="form-control")}}
+                </div>
+                <div class="mb-3">
+                    {{form.lastname.label(class="form-label")}}
+                    {{form.lastname(size=32, class="form-control")}}
+                </div>
+                <div class="mb-3">
+                    {{form.email.label(class="form-label")}}
+                    {{form.email(size=32, class="form-control")}}
+                </div>
+                <div class="mb-3">
+                    {{form.password.label(class="form-label")}}
+                    {{form.password(size=32, class="form-control")}}
+                </div>
+                <div class="mb-3">
+                    {{form.repeat_password.label(class="form-label")}}
+                    {{form.repeat_password(size=32, class="form-control")}}
+                </div>
+                <div class="mb-3">
+                    <div class="row justify-content-center">
+                        <div class="col-md-6 text-center">
+                            {{ form.submit(class="btn btn-primary") }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% endblock %}

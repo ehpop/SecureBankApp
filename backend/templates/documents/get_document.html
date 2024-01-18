@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="shadow-lg p-3 mb-5 bg-body-tertiary rounded container mt-5">
+    <h1 class="mb-4">Document List</h1>
+
+    <table class="table">
+        <thead>
+        <tr>
+            <th scope="col">File Name</th>
+            <th scope="col">Actions</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for filename in filenames %}
+        <tr>
+            <td>{{ filename }}</td>
+            <td>
+                <a href="{{ url_for('get_document_by_name', filename=filename) }}" class="btn btn-primary">Download</a>
+                <a href="{{ url_for('delete_document_by_name', filename=filename) }}" class="btn btn-danger">Delete</a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+</div>
+
+{% endblock %}

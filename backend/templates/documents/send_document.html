@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="shadow-lg p-3 mb-5 bg-body-tertiary rounded container mt-5">
+    <h1 class="mb-4">File Upload</h1>
+    <h2 class="mb-4">Heads up, we only accept those file extensions: {{allowed_extensions}}</h2>
+
+    <form method="post" enctype="multipart/form-data">
+        {{ form.hidden_tag() }}
+
+        <div class="mb-3">
+            <label for="fileInput" class="form-label"></label>
+            {{ form.file(class="form-control", id="fileInput") }}
+        </div>
+        <div class="mb-3">
+            {{form.password.label(class="form-label")}}
+            {{form.password(size=32, class="form-control")}}
+        </div>
+
+        <button type="submit" class="btn btn-primary">Upload</button>
+    </form>
+
+</div>
+
+{% endblock %}
