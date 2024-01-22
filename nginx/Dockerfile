@@ -1,4 +1,4 @@
-FROM nginx
+FROM byjg/nginx-extras:1.25
 
 RUN rm /etc/nginx/conf.d/default.conf
 

@@ -52,6 +52,7 @@ services:
     volumes:
       - db_new:/var/lib/postgresql/data
     ports:
+      #TODO: This mapping is only for development purposes
       - '5432:5432'
     networks:
       - network
