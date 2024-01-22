@@ -1,4 +1,3 @@
-# Simple form with password only
 import wtforms
 from flask_wtf import FlaskForm
 

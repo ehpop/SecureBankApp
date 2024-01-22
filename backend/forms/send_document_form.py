@@ -4,7 +4,7 @@ from flask_wtf.file import FileRequired, FileAllowed
 from wtforms import PasswordField, SubmitField
 from wtforms.validators import Regexp
 
-from backend.forms.shared.regex import password_regex
+from .shared.regex import password_regex
 
 
 class SendDocumentForm(FlaskForm):

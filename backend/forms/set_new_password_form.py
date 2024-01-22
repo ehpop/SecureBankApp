@@ -2,7 +2,7 @@ from flask_wtf import FlaskForm
 from wtforms import PasswordField, SubmitField
 from wtforms.validators import DataRequired, Length, EqualTo, Regexp
 
-from backend.forms.shared.regex import password_regex
+from .shared.regex import password_regex
 
 
 class SetNewPasswordForm(FlaskForm):
