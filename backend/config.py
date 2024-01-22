@@ -26,6 +26,7 @@ class Config:
     FAILED_LOGIN_ATTEMPTS_LOCKOUT_TIME = 5  # minutes
     AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD = 6
     AMOUNT_OF_COMBINATIONS_GENERATED_FOR_PASSWORD = 10
+    AMOUNT_OF_TIME_PASSWORD_COMBINATION_IS_ACTIVE = 10  # minutes
     DEFAULT_USER_BALANCE = 1000  # we are secure, yet terrible bank
 
     # Timeout config (time in seconds)
