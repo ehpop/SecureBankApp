@@ -2,27 +2,35 @@
 {% block content %}
 
 <div class="shadow-lg p-3 mb-5 bg-body-tertiary rounded container mt-5">
-    {% if not card_details %}
-    <h1 class="mb-4">Show credit card details</h1>
-    <p>Enter password to your account to see your credit card details.</p>
-    <form method="post">
-        {{ form.hidden_tag() }}
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            {% if not card_details %}
+            <h1 class="mb-5">Show credit card details</h1>
+            <p>Enter password to your account to see your credit card details.</p>
+            <form method="post">
+                {{ form.hidden_tag() }}
 
-        <div class="mb-3">
-            {{ form.password.label(class="form-label") }}
-            {{ form.password(size=32, class="form-control", placeholder="Enter your password") }}
-        </div>
+                <div class="mb-3">
+                    {{ form.password.label(class="form-label") }}
+                    {{ form.password(size=32, class="form-control", placeholder="Enter your password") }}
+                </div>
 
-        <div class="mb-3">
-            {{ form.submit(value="Show card details", class="btn btn-primary") }}
+                <div class="mb-3">
+                    <div class="row justify-content-center">
+                        <div class="col-md-6 text-center">
+                            {{ form.submit(value="Show card details", class="btn btn-primary") }}
+                        </div>
+                    </div>
+                </div>
+            </form>
+            {% else %}
+            <h1 class="mb-4">Credit Card details</h1>
+            <p>Card Number: {{ card_details["number"] }}</p>
+            <p>Expiration Date: {{ card_details["expiry_date"] }}</p>
+            <p>CVV: {{ card_details["cvc"] }}</p>
+            {% endif %}
         </div>
-    </form>
-    {% else %}
-    <h1 class="mb-4">Credit Card details</h1>
-    <p>Card Number: {{ card_details["number"] }}</p>
-    <p>Expiration Date: {{ card_details["expiry_date"] }}</p>
-    <p>CVV: {{ card_details["cvc"] }}</p>
-    {% endif %}
+    </div>
 
 </div>
 
