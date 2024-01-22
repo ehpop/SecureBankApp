@@ -5,6 +5,7 @@ import time
 import flask
 from PIL.Image import Image
 from flask import Flask, session, redirect, url_for, request, jsonify, flash
+from flask_wtf.csrf import CSRFProtect
 
 from config import Config
 from models import db
@@ -40,10 +41,25 @@ with app.app_context():
     login_manager.init_app(app)
     login_manager.login_view = 'login'
 
+    csrf = CSRFProtect(app)
+
 
 @login_manager.user_loader
 def load_user(user_id):
     return Users.get_user_by_login(user_id)
+
+
+@app.before_request
+def check_session_id():
+    if session.get("user_id", None) is None or session.get("authenticated", None) is None:
+        return
+
+    if session.get("ip_address", None) != request.remote_addr or session.get("user_agent",
+                                                                             None) != request.user_agent.string:
+        session.pop("user_id", None)
+        session.pop("authenticated", None)
+        logout_user()
+        return redirect(url_for("index"))
 
 
 def create_app():
@@ -134,6 +150,8 @@ def get_password_combination(user_id: str):
             user = Users.login_user(user_id, password_letters, ip_address, combination_id)
             session["user_id"] = user.us_lgn
             session["authenticated"] = True
+            session["ip_address"] = ip_address
+            session["user_agent"] = request.user_agent.string
             flash("You have been logged in successfully")
             login_user(user)
 
@@ -164,6 +182,7 @@ def transfer_money():
     form = TransferMoneyForm()
 
     if form.validate_on_submit():
+        transfer_recipient = form.recipient.data
         transfer_title = form.transfer_title.data
         account_to_transfer = form.account_to_transfer.data
         amount = form.amount.data
@@ -171,7 +190,8 @@ def transfer_money():
         user_id = session["user_id"]
 
         try:
-            Transactions.make_transaction(from_account_number=Users.get_user_by_login(user_id).us_act_nb,
+            Transactions.make_transaction(receiver_name=transfer_recipient,
+                                          from_account_number=Users.get_user_by_login(user_id).us_act_nb,
                                           to_account_number=account_to_transfer,
                                           amount=amount,
                                           title=transfer_title,
