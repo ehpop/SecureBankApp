@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-
   nginx:
     build: nginx
     container_name: nginx
@@ -40,7 +39,6 @@ services:
       timeout: 5s
       retries: 5
 
-
   bank_db_container:
     image: postgres:16.0-alpine
     container_name: bank-db-container
@@ -50,10 +48,7 @@ services:
       - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
       - POSTGRES_DB=${DATABASE_NAME}
     volumes:
-      - db_new:/var/lib/postgresql/data
-    ports:
-      #TODO: This mapping is only for development purposes
-      - '5432:5432'
+      - db:/var/lib/postgresql/data
     networks:
       - network
     healthcheck:
@@ -63,7 +58,7 @@ services:
       retries: 5
 
 volumes:
-  db_new:
+  db:
     driver: local
   backend:
     driver: local
