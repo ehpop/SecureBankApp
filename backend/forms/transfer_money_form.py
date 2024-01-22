@@ -2,13 +2,11 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, IntegerField
 from wtforms.validators import DataRequired, Length, NumberRange, Regexp
 
-"""
-Account must be polish IBAN number.
-"""
-iban_regex = "^PL[0-9]{26}$"
+from shared.regex import iban_regex
 
 
 class TransferMoneyForm(FlaskForm):
+    recipient = StringField('Recipient', validators=[DataRequired(), Length(min=2, max=80)])
     transfer_title = StringField('Transfer title', validators=[DataRequired(), Length(min=2, max=20)])
     account_to_transfer = StringField('Account to transfer', validators=[DataRequired(), Length(min=28, max=28),
                                                                          Regexp(iban_regex,

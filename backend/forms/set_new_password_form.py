@@ -2,10 +2,7 @@ from flask_wtf import FlaskForm
 from wtforms import PasswordField, SubmitField
 from wtforms.validators import DataRequired, Length, EqualTo, Regexp
 
-"""
-Password must contain at least 1 uppercase letter, 1 number and 1 special character.
-"""
-password_regex = "^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()-=_+]).{8,16}$"
+from shared.regex import password_regex
 
 
 class SetNewPasswordForm(FlaskForm):
