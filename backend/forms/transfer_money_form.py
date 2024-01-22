@@ -2,7 +2,7 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, IntegerField
 from wtforms.validators import DataRequired, Length, NumberRange, Regexp
 
-from shared.regex import iban_regex
+from backend.forms.shared.regex import iban_regex
 
 
 class TransferMoneyForm(FlaskForm):
