@@ -9,21 +9,21 @@ from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 
-db = SQLAlchemy()
-
 from helpers.file_content_checker import check_file_content_based_on_extension, get_file_extension
 from helpers.file_encrypter import encrypt_bytes_with_password_and_salt, decrypt_bytes_with_password_and_salt
 from helpers.generate_numbers import generate_account_number, generate_random_consecutive_numbers, \
     generate_random_password_recovery_code
 from helpers.generate_numbers import generate_card_data
 
+db = SQLAlchemy()
+
 
 class Users(db.Model, UserMixin):
-    us_lgn = db.Column(db.String, primary_key=True)
-    us_email = db.Column(db.String, unique=True, nullable=False)
-    us_nme = db.Column(db.String, nullable=False)
-    us_hsh = db.Column(db.String, nullable=False)
-    us_act_nb = db.Column(db.String, unique=True, nullable=False)
+    us_lgn = db.Column(db.String(20), primary_key=True)
+    us_email = db.Column(db.String(320), unique=True, nullable=False)
+    us_nme = db.Column(db.String(200), nullable=False)
+    us_hsh = db.Column(db.String(120), nullable=False)
+    us_act_nb = db.Column(db.String(28), unique=True, nullable=False)
     us_blnc = db.Column(db.Integer, nullable=False)
     salt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
     us_crd_nb_id = db.Column(db.Integer, db.ForeignKey("credit_cards.crd_id"))
@@ -228,12 +228,10 @@ class Users(db.Model, UserMixin):
 
 
 class UserCredentials(db.Model):
-    AMOUNT_OF_ACTIVE_TIME = 10
-
     cmb_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    usr_id = db.Column(db.String, nullable=False)
-    pswd_ltrs_nmbrs = db.Column(db.String, nullable=False)
-    hsh_val = db.Column(db.String, nullable=False)
+    usr_id = db.Column(db.String(20), nullable=False)
+    pswd_ltrs_nmbrs = db.Column(db.String(55), nullable=False)
+    hsh_val = db.Column(db.String(120), nullable=False)
     lst_activated_date = db.Column(db.DateTime, default=None, nullable=True)
     slt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
 
@@ -274,7 +272,7 @@ class UserCredentials(db.Model):
         """
         Checks if the password combination is correct for a given id. It also must be active, meaning
         user must have asked server for this specific combination in the last
-        UserCredentials.AMOUNT_OF_ACTIVE_TIME minutes.
+        {AMOUNT_OF_TIME_PASSWORD_COMBINATION_IS_ACTIVE} minutes.
 
         **IMPORTANT**: This method automatically removes last activated date from the password combination
         so that it won't be used again immediately.
@@ -346,7 +344,7 @@ class UserCredentials(db.Model):
     def is_password_combination_active(combination_id: str) -> bool:
         """
         Checks if the password combination is active. Meaning that it was activated less than
-        UserCredentials.AMOUNT_OF_ACTIVE_TIME minutes ago.
+        {AMOUNT_OF_TIME_PASSWORD_COMBINATION_IS_ACTIVE} minutes ago.
         :param combination_id: id of the password combination to check
         :return: True if the password combination is active, False otherwise
         """
@@ -358,7 +356,7 @@ class UserCredentials(db.Model):
 
         return combination.lst_activated_date is not None \
             and combination.lst_activated_date > datetime.utcnow() - timedelta(
-                minutes=UserCredentials.AMOUNT_OF_ACTIVE_TIME)
+                minutes=current_app.config['AMOUNT_OF_TIME_PASSWORD_COMBINATION_IS_ACTIVE'])
 
     @staticmethod
     def parse_list_of_numbers_from_string(string: str) -> list[int]:
@@ -415,7 +413,7 @@ class UserCredentials(db.Model):
 
 class Salts(db.Model):
     slt_id = db.Column(db.Integer, primary_key=True)
-    slt_vl = db.Column(db.String, nullable=False)
+    slt_vl = db.Column(db.String(58), nullable=False)
 
     def __repr__(self):
         return f"<Salt {self.slt_id}>"
@@ -450,20 +448,22 @@ class Salts(db.Model):
 
 class Transactions(db.Model):
     trns_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    act_frm = db.Column(db.String, db.ForeignKey("users.us_act_nb"))
-    act_to = db.Column(db.String, db.ForeignKey("users.us_act_nb"))
+    trns_addr = db.Column(db.String(80), nullable=False)
+    act_frm = db.Column(db.String(28), db.ForeignKey("users.us_act_nb"))
+    act_to = db.Column(db.String(28), db.ForeignKey("users.us_act_nb"))
     trns_amt = db.Column(db.Integer, nullable=False)
     trns_dt = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    trns_ttl = db.Column(db.String, nullable=False)
+    trns_ttl = db.Column(db.String(200), nullable=False)
 
     def __repr__(self):
         return f"<Transactions {self.trns_id}>"
 
     def __str__(self):
-        return f"from: {self.act_frm}, to: {self.act_to}, amount: {self.trns_amt}, date: {self.trns_dt}, title: {self.trns_ttl}"
+        return f"receiver: {self.trns_addr} from: {self.act_frm}, to: {self.act_to}, amount: {self.trns_amt}, date: {self.trns_dt}, title: {self.trns_ttl}"
 
     def to_dict(self):
         return {
+            "receiver": self.trns_addr,
             "from": self.act_frm,
             "to": self.act_to,
             "amount": self.trns_amt,
@@ -473,6 +473,7 @@ class Transactions(db.Model):
 
     def to_json(self):
         return f"""{{
+            "receiver": "{self.trns_addr}",
             "from": "{self.act_frm}",
             "to": "{self.act_to}",
             "amount": "{self.trns_amt}",
@@ -527,11 +528,13 @@ class Transactions(db.Model):
         return Transactions.query.where(Transactions.act_frm == user.us_act_nb).all()
 
     @staticmethod
-    def make_transaction(from_account_number: str, to_account_number: str, amount: int, password: str,
+    def make_transaction(receiver_name: str, from_account_number: str, to_account_number: str, amount: int,
+                         password: str,
                          title="Transfer title",
                          transfer_date=datetime.utcnow()):
         """
         Makes a transaction from one account to another.
+        :param receiver_name: Name of transaction receiver, is what user provides
         :param from_account_number: Account number from which the transaction should be made
         :param to_account_number: Account number to which the transaction should be made
         :param amount: Amount of money to transfer
@@ -558,11 +561,23 @@ class Transactions(db.Model):
         if issuer.us_blnc < amount:
             raise ValueError("Not enough money on the account")
 
+        if issuer.us_act_nb == receiver.us_act_nb:
+            raise ValueError("You cannot transfer money to yourself")
+
+        if amount <= 0:
+            raise ValueError("You cannot transfer negative or zero amount of money")
+
         issuer.us_blnc -= amount
         receiver.us_blnc += amount
 
-        transaction = Transactions(act_frm=from_account_number, act_to=to_account_number, trns_amt=amount,
-                                   trns_ttl=title, trns_dt=transfer_date)
+        transaction = Transactions(
+            trns_addr=receiver_name,
+            act_frm=from_account_number,
+            act_to=to_account_number,
+            trns_amt=amount,
+            trns_ttl=title,
+            trns_dt=transfer_date
+        )
         transaction.save_transaction()
 
         issuer.save_user()
@@ -571,12 +586,12 @@ class Transactions(db.Model):
 
 class Documents(db.Model):
     dcm_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    dcm_ad_dt = db.Column(db.String, nullable=False)
-    dcm_ttl = db.Column(db.String, nullable=False)
-    dcm_typ = db.Column(db.String, nullable=False)
-    dcm_hsh = db.Column(db.String, nullable=False)
+    dcm_ad_dt = db.Column(db.DateTime, default=datetime.utcnow)
+    dcm_ttl = db.Column(db.String(255), nullable=False)
+    dcm_typ = db.Column(db.String(5), nullable=False)
+    dcm_hsh = db.Column(db.String(120), nullable=False)
     dcm_slt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
-    own_id = db.Column(db.String, db.ForeignKey("users.us_lgn"))
+    own_id = db.Column(db.String(20), db.ForeignKey("users.us_lgn"))
 
     def __repr__(self):
         return f"<Document {self.dcm_id}>"
@@ -749,9 +764,9 @@ class Documents(db.Model):
 
 class LoginAttempts(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String, db.ForeignKey("users.us_lgn"))
+    username = db.Column(db.String(20), db.ForeignKey("users.us_lgn"))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    ip_address = db.Column(db.String, nullable=False)
+    ip_address = db.Column(db.String(39), nullable=False)
     success = db.Column(db.Boolean, nullable=False)
 
     def __repr__(self):
@@ -857,12 +872,12 @@ class LoginAttempts(db.Model):
 
 class CreditCards(db.Model):
     crd_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    crd_nb_hidden = db.Column(db.String, nullable=False)
-    crd_cvc_hidden = db.Column(db.String, nullable=False)
-    crd_exp_dt_hidden = db.Column(db.String, nullable=False)
-    crd_nb = db.Column(db.String, nullable=False)
-    crd_cvc = db.Column(db.String, nullable=False)
-    crd_exp_dt = db.Column(db.String, nullable=False)
+    crd_nb_hidden = db.Column(db.String(16), nullable=False)
+    crd_cvc_hidden = db.Column(db.String(3), nullable=False)
+    crd_exp_dt_hidden = db.Column(db.String(5), nullable=False)
+    crd_nb = db.Column(db.String(700), nullable=False)
+    crd_cvc = db.Column(db.String(700), nullable=False)
+    crd_exp_dt = db.Column(db.String(700), nullable=False)
     slt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
 
     def __repr__(self):
@@ -903,8 +918,11 @@ class CreditCards(db.Model):
 
     @staticmethod
     def get_credit_card_by_owner(card_owner: str):
-        card_id = Users.get_user_by_login(card_owner).us_crd_nb_id
-        return CreditCards.query.where(CreditCards.crd_id == card_id).first()
+        try:
+            card_id = Users.get_user_by_login(card_owner).us_crd_nb_id
+            return CreditCards.query.where(CreditCards.crd_id == card_id).first()
+        except AttributeError:
+            return None
 
     @staticmethod
     def get_credit_card_by_number(card_number: str):
@@ -955,10 +973,8 @@ class CreditCards(db.Model):
 
 
 class PasswordRecoveryCodes(db.Model):
-    TIME_ALLOWED_FOR_PASSWORD_RECOVERY = 5
-
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    user_id = db.Column(db.String, db.ForeignKey("users.us_lgn"))
+    user_id = db.Column(db.String(20), db.ForeignKey("users.us_lgn"))
     code = db.Column(db.String(64), unique=True, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1030,7 +1046,7 @@ class PasswordRecoveryCodes(db.Model):
         code_for_user = PasswordRecoveryCodes.get_password_recovery_code_by_user_id(user.us_lgn)
         if code_for_user is not None:
             if code_for_user.timestamp > datetime.utcnow() - timedelta(
-                    minutes=PasswordRecoveryCodes.TIME_ALLOWED_FOR_PASSWORD_RECOVERY):
+                    minutes=current_app.config['TIME_ALLOWED_FOR_PASSWORD_RECOVERY']):
                 return code_for_user.code
             else:
                 code_for_user.delete_password_recovery_code()
@@ -1051,7 +1067,7 @@ class PasswordRecoveryCodes(db.Model):
     def is_code_valid(code: str) -> bool:
         """
         Checks if the password recovery code is valid. Meaning that it was generated less than
-        PasswordRecoveryCodes.TIME_ALLOWED_FOR_PASSWORD_RECOVERY minutes ago.
+        current_app.config['TIME_ALLOWED_FOR_PASSWORD_RECOVERY'] minutes ago.
         :param code: password recovery code to check
         :return: True if the password recovery code is valid, False otherwise
         """
@@ -1061,7 +1077,7 @@ class PasswordRecoveryCodes(db.Model):
             return False
 
         return password_recovery_code.timestamp > datetime.utcnow() - timedelta(
-            minutes=PasswordRecoveryCodes.TIME_ALLOWED_FOR_PASSWORD_RECOVERY)
+            minutes=current_app.config['TIME_ALLOWED_FOR_PASSWORD_RECOVERY'])
 
     @staticmethod
     def send_password_recovery_code(user_email, code):
