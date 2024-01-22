@@ -875,9 +875,9 @@ class CreditCards(db.Model):
     crd_nb_hidden = db.Column(db.String(16), nullable=False)
     crd_cvc_hidden = db.Column(db.String(3), nullable=False)
     crd_exp_dt_hidden = db.Column(db.String(5), nullable=False)
-    crd_nb = db.Column(db.String(700), nullable=False)
-    crd_cvc = db.Column(db.String(700), nullable=False)
-    crd_exp_dt = db.Column(db.String(700), nullable=False)
+    crd_nb = db.Column(db.String(96), nullable=False)
+    crd_cvc = db.Column(db.String(64), nullable=False)
+    crd_exp_dt = db.Column(db.String(64), nullable=False)
     slt_id = db.Column(db.Integer, db.ForeignKey("salts.slt_id"))
 
     def __repr__(self):
