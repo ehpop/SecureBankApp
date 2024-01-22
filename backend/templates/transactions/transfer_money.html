@@ -14,6 +14,10 @@
                     <form method="POST">
                         {{ form.hidden_tag() }}
                         <div class="mb-3">
+                            {{ form.recipient.label(class="form-label") }}<br>
+                            {{ form.recipient(size=32, class="form-control") }}
+                        </div>
+                        <div class="mb-3">
                             {{ form.transfer_title.label(class="form-label") }}<br>
                             {{ form.transfer_title(size=32, class="form-control") }}
                         </div>
