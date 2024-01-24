@@ -5,8 +5,10 @@
     <div class="row justify-content-center">
         <div class="col-md-5">
             {% if not card_details %}
-            <h1 class="mb-5">Show credit card details</h1>
-            <p>Enter password to your account to see your credit card details.</p>
+            <div class="text-center">
+                <h1 class="mb-5">Show credit card details</h1>
+                <h6>Enter password to your account to see your credit card details.</h6>
+            </div>
             <form method="post">
                 {{ form.hidden_tag() }}
 
