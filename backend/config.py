@@ -41,3 +41,7 @@ class Config:
 
     # Bcrypt config
     BCRYPT_LOG_WORK_FACTOR = 13
+
+    # AES config
+    AES_KEY_LENGTH = 32
+    AES_PADDING_STYLE = 'x923'

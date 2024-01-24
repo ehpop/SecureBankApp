@@ -1,6 +1,7 @@
 from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import PBKDF2
 from Crypto.Util.Padding import pad, unpad
+from flask import current_app
 
 
 def get_secure_key_from_password(password: str, salt: bytes) -> bytes:
@@ -23,7 +24,7 @@ def encrypt_bytes_with_password_and_salt(file_content: bytes, password: str, sal
     """
     key = get_secure_key_from_password(password, salt)
     cipher = AES.new(key, AES.MODE_CBC)
-    ciphertext = cipher.encrypt(pad(file_content, AES.block_size))
+    ciphertext = cipher.encrypt(pad(file_content, AES.block_size, current_app.config['AES_PADDING_STYLE']))
     iv = cipher.iv
 
     return iv + ciphertext
@@ -40,8 +41,12 @@ def decrypt_bytes_with_password_and_salt(file_content: bytes, password: str, sal
     key = get_secure_key_from_password(password, salt)
     iv = file_content[: AES.block_size]
     decrypt_cipher = AES.new(key, AES.MODE_CBC, iv)
-    plaintext = unpad(
-        decrypt_cipher.decrypt(file_content[AES.block_size:]), AES.block_size
-    )
+    plaintext = decrypt_cipher.decrypt(file_content[AES.block_size:])
+
+    try:
+        plaintext = unpad(plaintext, AES.block_size, current_app.config['AES_PADDING_STYLE'])
+    except ValueError:
+        current_app.logger.error("Invalid padding, file is corrupted or password is wrong.")
+        raise ValueError("Invalid padding, file is corrupted or password is wrong.")
 
     return plaintext

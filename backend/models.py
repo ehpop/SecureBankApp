@@ -756,7 +756,10 @@ class Documents(db.Model):
             raise ValueError("File is empty")
 
         salt = bytes.fromhex(Salts.get_salt_by_id(Users.get_user_by_login(user_id).salt_id).slt_vl)
-        decrypted_data = decrypt_bytes_with_password_and_salt(content, password, salt)
+        try:
+            decrypted_data = decrypt_bytes_with_password_and_salt(content, password, salt)
+        except ValueError:
+            raise ValueError("File could not be decrypted")
 
         return decrypted_data
 
@@ -985,9 +988,13 @@ class CreditCards(db.Model):
 
         salt = Salts.get_salt_by_id(credit_card.slt_id)
 
-        card_number = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_nb), password, salt.slt_vl)
-        cvc = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_cvc), password, salt.slt_vl)
-        expiry_date = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_exp_dt), password, salt.slt_vl)
+        try:
+            card_number = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_nb), password, salt.slt_vl)
+            cvc = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_cvc), password, salt.slt_vl)
+            expiry_date = decrypt_bytes_with_password_and_salt(bytes.fromhex(credit_card.crd_exp_dt), password,
+                                                               salt.slt_vl)
+        except ValueError:
+            raise ValueError("Data could not be decrypted")
 
         return {
             "number": card_number.decode("utf-8"),
