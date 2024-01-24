@@ -194,7 +194,7 @@ class Users(db.Model, UserMixin):
         if Users.is_email_taken(email):
             raise ValueError("Email already taken")
 
-        salt = bcrypt.gensalt()
+        salt = bcrypt.gensalt(current_app.config["BCRYPT_LOG_WORK_FACTOR"])
         hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt).hex()
 
         new_salt = Salts(slt_vl=salt.hex())
@@ -381,7 +381,7 @@ class UserCredentials(db.Model):
                                                                                           'AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD'])
 
             letters_in_password = "".join([plain_password[i - 1] for i in combination_of_password_letters])
-            salt = bcrypt.gensalt()
+            salt = bcrypt.gensalt(current_app.config["BCRYPT_LOG_WORK_FACTOR"])
             hashed_password = bcrypt.hashpw(letters_in_password.encode("utf-8"), salt).hex()
 
             new_salt = Salts(slt_vl=salt.hex())
@@ -663,7 +663,7 @@ class Documents(db.Model):
         if errors:
             raise ValueError(errors)
 
-        salt = bcrypt.gensalt()
+        salt = bcrypt.gensalt(current_app.config["BCRYPT_LOG_WORK_FACTOR"])
         hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt).hex()
         new_salt = Salts(slt_vl=salt.hex())
         new_salt.save_salt()

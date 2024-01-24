@@ -38,3 +38,6 @@ class Config:
     # Password recovery
     TIME_ALLOWED_FOR_PASSWORD_RECOVERY = 5  # minutes
     PASSWORD_RECOVERY_CODE_LENGTH = 32
+
+    # Bcrypt config
+    BCRYPT_LOG_WORK_FACTOR = 13

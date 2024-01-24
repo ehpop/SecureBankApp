@@ -3,6 +3,7 @@ This file contains helper functions for views.py, mainly logic shared in multipl
 """
 
 import bcrypt
+from flask import current_app
 
 from models import Users, Salts, PasswordRecoveryCodes
 
@@ -30,7 +31,7 @@ def hash_new_password_with_new_salt(new_password: str):
     :return: new salt and hashed password
     """
 
-    salt = bcrypt.gensalt()
+    salt = bcrypt.gensalt(current_app.config["BCRYPT_LOG_WORK_FACTOR"])
     hashed_password = bcrypt.hashpw(new_password.encode("utf-8"), salt).hex()
 
     new_salt = Salts(slt_vl=salt.hex())
