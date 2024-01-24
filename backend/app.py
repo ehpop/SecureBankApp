@@ -68,7 +68,7 @@ def create_app():
 
 @app.route("/health")
 def health():
-    return jsonify({"message": "OK"}), 200
+    return jsonify({"message": "Service healthy"}), 200
 
 
 @app.route("/", methods=["GET"])
@@ -218,7 +218,7 @@ def get_transactions():
     return flask.render_template("transactions/get_transactions.html", incoming=incoming, outgoing=outgoing)
 
 
-@app.route("/get_all_login_attemps")
+@app.route("/get_all_login_attempts")
 @login_required
 def get_all_login_attempts():
     login_attempts = LoginAttempts.get_all_login_attempts_for_user(session["user_id"])
@@ -330,7 +330,6 @@ def delete_document_by_name(filename: str):
 @login_required
 def access_card_details():
     form = AccessDocumentForm()
-    card_data = None
 
     if form.validate_on_submit():
         password = form.password.data
@@ -436,7 +435,8 @@ def password_recovery_verify(password_recovery_code: str):
     try:
         code_object = verify_provided_password_recovery_code(password_recovery_code)
     except ValueError as e:
-        return jsonify({"error": f"{e}"}), 400
+        flash(str(e))
+        return redirect(url_for('index'))
 
     form = SetNewPasswordForm()
 
@@ -475,21 +475,25 @@ def password_recovery_verify(password_recovery_code: str):
 
 @app.errorhandler(404)
 def not_found(error):
+    app.logger.error(error)
     return flask.render_template('error_pages/404.html'), 404
 
 
 @app.errorhandler(401)
 def unauthorized(error):
+    app.logger.error(error)
     return flask.render_template('error_pages/401.html'), 401
 
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
+    app.logger.error(error)
     return flask.render_template('error_pages/413.html'), 413
 
 
 @app.errorhandler(500)
 def internal_error(error):
+    app.logger.error(error)
     return flask.render_template('error_pages/500.html'), 500
 
 
