@@ -6,10 +6,10 @@ from .shared.regex import password_regex, username_regex
 
 
 class RegisterForm(FlaskForm):
-    name = StringField('Name', validators=[DataRequired(), Length(min=2, max=20), Regexp(username_regex,
-                                                                                         message="Username can contain only letters, numbers and underscores.")])
+    username = StringField('Username', validators=[DataRequired(), Length(min=6, max=20), Regexp(username_regex,
+                                                                                                 message="Username can contain only english alphabet letters, numbers and underscores.")])
+    name = StringField('Name', validators=[DataRequired(), Length(min=2, max=20)])
     lastname = StringField('Lastname', validators=[DataRequired(), Length(min=2, max=20)])
-    username = StringField('Username', validators=[DataRequired(), Length(min=6, max=20)])
     email = StringField('Email', validators=[DataRequired(), Email()])
     password = PasswordField('Password', validators=[DataRequired(), Length(min=8, max=16),
                                                      Regexp(password_regex,
