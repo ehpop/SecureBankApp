@@ -216,8 +216,10 @@ class Users(db.Model, UserMixin):
 
         new_user.save_user()
 
-        UserCredentials.generate_new_password_combinations(password,
-                                                           new_user.us_lgn)
+        if len(UserCredentials.get_user_credentials_by_user_id(username)) > 0:
+            UserCredentials.delete_all_combinations_for_user(username)
+
+        UserCredentials.generate_new_password_combinations(password, new_user.us_lgn)
 
         return new_user
 
@@ -261,7 +263,7 @@ class UserCredentials(db.Model):
 
     @staticmethod
     def get_user_credentials_by_user_id(user_id: str):
-        return UserCredentials.query.where(UserCredentials.usr_id == user_id).first()
+        return UserCredentials.query.where(UserCredentials.usr_id == user_id).all()
 
     @staticmethod
     def get_user_credentials_by_id(combination_id: str):
@@ -331,14 +333,32 @@ class UserCredentials(db.Model):
         return random_credentials
 
     @staticmethod
-    def get_fake_credentials():
-        user_id = "fake_user"
+    def get_fake_credentials(user_id: str) -> (str, list[int]):
+        """
+        Gets fake credentials for a given user. If there are no credentials for a given user, it generates
+        new ones and returns them. Generated credentials are saved in database, with no password hash and no salt.
+        We only save 1 combination per fake user in order to save space in database.
+        :param user_id:
+        :return:
+        """
+        credentials_for_user = UserCredentials.query.where(UserCredentials.usr_id == user_id).first()
+
+        if credentials_for_user is not None:
+            return user_id, UserCredentials.parse_list_of_numbers_from_string(credentials_for_user.pswd_ltrs_nmbrs)
+
         combinations = set()
         max_password_length = current_app.config['MAX_PASSWORD_LENGTH']
         while len(combinations) < current_app.config['AMOUNT_OF_CHARS_REQUIRED_IN_PASSWORD']:
             combinations.add(1 + secrets.randbelow(max_password_length + 1))
 
-        return user_id, list(sorted(combinations))
+        combination = UserCredentials(usr_id=user_id,
+                                      pswd_ltrs_nmbrs=list(combinations),
+                                      hsh_val="",
+                                      lst_activated_date=None,
+                                      slt_id=None)
+        combination.save_user_credentials()
+
+        return combination.usr_id, UserCredentials.parse_list_of_numbers_from_string(combination.pswd_ltrs_nmbrs)
 
     @staticmethod
     def is_password_combination_active(combination_id: str) -> bool:
@@ -399,7 +419,8 @@ class UserCredentials(db.Model):
             raise ValueError(f"User with login {user_id} does not exist")
 
         all_credentials = UserCredentials.query.where(UserCredentials.usr_id == user_id)
-        all_credentials_salt_ids = [credential.slt_id for credential in all_credentials]
+        all_credentials_salt_ids = [credential.slt_id for credential in all_credentials if
+                                    credential.slt_id is not None]
         all_credentials.delete()
         db.session.commit()
 
@@ -958,6 +979,9 @@ class CreditCards(db.Model):
 
         if credit_card is None:
             raise ValueError(f"Card for user {user_id} does not exist")
+
+        if not Users.check_password_for_user(user_id, password):
+            raise ValueError("Wrong credentials")
 
         salt = Salts.get_salt_by_id(credit_card.slt_id)
 

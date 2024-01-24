@@ -134,7 +134,7 @@ def get_password_combination(user_id: str):
     credentials = UserCredentials.get_random_credentials_for_user(user_id)
 
     if credentials is None:
-        combination = UserCredentials.get_fake_credentials()[1]
+        combination = UserCredentials.get_fake_credentials(user_id)[1]
         combination_id = -1
     else:
         combination = UserCredentials.parse_list_of_numbers_from_string(credentials.pswd_ltrs_nmbrs)
@@ -499,4 +499,5 @@ def internal_error(error):
 
 app.register_error_handler(404, not_found)
 app.register_error_handler(401, unauthorized)
+app.register_error_handler(413, request_entity_too_large)
 app.register_error_handler(500, internal_error)
