@@ -5,9 +5,5 @@
 # To run with docker
 
 ```shell
-docker compose build
+docker compose up --build
 ```
-```shell docker compose up
-docker compose up
-```
-
