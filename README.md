@@ -60,6 +60,10 @@ docker compose up --build
   - SSL certificate generated with OpenSSL.
   - ![Certificate](images/cert.png)
 
+- **Responsive design**
+  - App can be accessed from mobile devices.
+  - ![Responsive](images/mobile-main.png)
+  - ![Responsive](images/mobile-login.png)
 ---
 
 ### Project Structure
